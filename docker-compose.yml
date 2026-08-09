@@ -1,0 +1,107 @@
+# CoreStudio production stack: backend + admin + postgres + nginx + cron
+# Usage: cp .env.example .env && edit values, then: docker compose up -d --build
+name: corestudio
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-corestudio}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-corestudio}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-corestudio}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # REST API + Prisma + all business logic. Owns the database.
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-corestudio}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-corestudio}
+      AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET in .env}
+      # Without this, NextAuth rejects every session check with
+      # "UntrustedHost" — it doesn't recognize the Host header nginx/admin's
+      # proxy forwards (localhost / backend:4000) as trusted by default.
+      AUTH_TRUST_HOST: "true"
+      BACKEND_PUBLIC_URL: ${BACKEND_PUBLIC_URL:?set BACKEND_PUBLIC_URL in .env}
+      ADMIN_PUBLIC_URL: ${ADMIN_PUBLIC_URL:?set ADMIN_PUBLIC_URL in .env}
+      PAYSTACK_SECRET_KEY: ${PAYSTACK_SECRET_KEY}
+      PAYSTACK_PUBLIC_KEY: ${PAYSTACK_PUBLIC_KEY}
+      SMS_PROVIDER: ${SMS_PROVIDER:-console}
+      ARKESEL_API_KEY: ${ARKESEL_API_KEY}
+      HUBTEL_CLIENT_ID: ${HUBTEL_CLIENT_ID}
+      HUBTEL_CLIENT_SECRET: ${HUBTEL_CLIENT_SECRET}
+      SMS_SENDER_ID: ${SMS_SENDER_ID:-CoreStudio}
+      CRON_SECRET: ${CRON_SECRET:?set CRON_SECRET in .env}
+    expose:
+      - "4000"
+
+  # Staff admin portal + public site (login/signup/marketing). Talks to
+  # `backend` both server-side (direct Prisma import) and via /api/* rewrite.
+  admin:
+    build:
+      context: .
+      dockerfile: admin/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-corestudio}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-corestudio}
+      AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET in .env}
+      AUTH_URL: ${ADMIN_PUBLIC_URL:?set ADMIN_PUBLIC_URL in .env}
+      AUTH_TRUST_HOST: "true"
+      BACKEND_INTERNAL_URL: http://backend:4000
+      # admin imports @backend/lib/payment-flows directly for the waitlist-
+      # claim web fallback page (src/app/pay/[bookingId]) — needs its own
+      # copy of this since it runs in a separate process from backend.
+      PAYSTACK_SECRET_KEY: ${PAYSTACK_SECRET_KEY}
+      BACKEND_PUBLIC_URL: ${BACKEND_PUBLIC_URL}
+    expose:
+      - "3000"
+
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    depends_on:
+      - admin
+    ports:
+      - "80:80"
+      # For TLS, add "443:443" and mount certificates (e.g. from certbot)
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+
+  # Fires the scheduled jobs (reminders, session generation, waitlist expiry,
+  # plan cycles, auto-complete) every 5 minutes. Talks to backend directly —
+  # no need to round-trip through admin's rewrite for an internal call.
+  cron:
+    image: curlimages/curl:latest
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      CRON_SECRET: ${CRON_SECRET}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        while true; do
+          sleep 300
+          curl -s -X POST -H "Authorization: Bearer $$CRON_SECRET" http://backend:4000/api/cron || true
+        done
+
+volumes:
+  pgdata:

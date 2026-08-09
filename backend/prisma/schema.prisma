@@ -1,0 +1,328 @@
+// CoreStudio data model.
+// All money fields are integer pesewas (1 GHS = 100 pesewas), despite the
+// GHS suffix in names. Never store floats for money.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  TRAINER
+  MEMBER
+}
+
+enum MemberStatus {
+  ACTIVE
+  FROZEN
+  CANCELLED
+}
+
+enum SessionKind {
+  CLASS
+  PT
+}
+
+enum SessionStatus {
+  SCHEDULED
+  CANCELLED
+  COMPLETED
+}
+
+enum BookingStatus {
+  BOOKED
+  WAITLIST
+  ATTENDED
+  NO_SHOW
+  CANCELLED
+}
+
+enum PaymentMethod {
+  CREDIT
+  MOMO
+  CARD
+  CASH
+  COMP
+  WALLET // booking fully covered by Member.walletGHS
+}
+
+enum PaymentStatus {
+  PENDING
+  CONFIRMED
+  FAILED
+}
+
+enum PayoutStatus {
+  PENDING
+  PAID
+}
+
+model Studio {
+  id                 String   @id @default(cuid())
+  name               String
+  currency           String   @default("GHS")
+  momoNumber         String?
+  advanceBookingDays Int      @default(14)
+  cancelCutoffHours  Int      @default(12)
+  bookingCutoffMinutes Int    @default(45)
+  timezone           String   @default("Africa/Accra")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model User {
+  id           String    @id @default(cuid())
+  name         String
+  email        String    @unique
+  phone        String?   @unique
+  phoneVerifiedAt DateTime?
+  passwordHash String
+  role         Role      @default(MEMBER)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  member    Member?
+  trainer   Trainer?
+  auditLogs AuditLog[]
+}
+
+model OtpCode {
+  id        String    @id @default(cuid())
+  phone     String
+  codeHash  String
+  purpose   String // VERIFY_PHONE | LOGIN | RESET_PASSWORD
+  expiresAt DateTime
+  usedAt    DateTime?
+  attempts  Int       @default(0)
+  createdAt DateTime  @default(now())
+
+  @@index([phone, purpose])
+}
+
+model MembershipPlan {
+  id              String  @id @default(cuid())
+  name            String
+  priceGHS        Int // pesewas
+  classesPerCycle Int // base classes granted per cycle
+  bonusCredits    Int     @default(0) // extra free classes on top of classesPerCycle
+  cycleDays       Int     @default(30)
+  description     String  @default("")
+  active          Boolean @default(true)
+
+  members  Member[]
+  payments Payment[]
+  perks    PerkItem[] @relation("PlanPerks")
+}
+
+model PerkItem {
+  id     String  @id @default(cuid())
+  name   String
+  active Boolean @default(true)
+
+  plans MembershipPlan[] @relation("PlanPerks")
+}
+
+model Member {
+  id            String       @id @default(cuid())
+  userId        String       @unique
+  planId        String?
+  status        MemberStatus @default(ACTIVE)
+  creditsLeft   Int          @default(0)
+  walletGHS     Int          @default(0) // pesewas
+  cycleRenewsAt DateTime?
+  // Renewal reminder dedupe (rule 7)
+  renewalReminderAt DateTime?
+  joinedAt      DateTime     @default(now())
+
+  user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan     MembershipPlan? @relation(fields: [planId], references: [id])
+  bookings Booking[]
+  payments Payment[]
+}
+
+model Trainer {
+  id                String  @id @default(cuid())
+  userId            String  @unique
+  specialty         String  @default("")
+  commissionPercent Int     @default(40)
+  ptRateGHS         Int     @default(0) // pesewas
+  calendarColor     String  @default("#0ea5e9")
+  bio               String  @default("")
+  photoUrl          String?
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessions Session[]
+  payouts  Payout[]
+  recurrenceRules RecurrenceRule[]
+  unavailability  TrainerUnavailability[]
+}
+
+model TrainerUnavailability {
+  id              String   @id @default(cuid())
+  trainerId       String
+  date            DateTime // UTC midnight — one row per calendar day
+  reason          String   @default("")
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+
+  trainer Trainer @relation(fields: [trainerId], references: [id], onDelete: Cascade)
+
+  @@unique([trainerId, date])
+  @@index([trainerId, date])
+}
+
+model Location {
+  id        String   @id @default(cuid())
+  name      String
+  address   String   @default("")
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  sessions        Session[]
+  recurrenceRules RecurrenceRule[]
+}
+
+model ClassType {
+  id              String  @id @default(cuid())
+  name            String
+  durationMins    Int     @default(60)
+  priceGHS        Int // pesewas, drop-in price
+  defaultCapacity Int     @default(8)
+  description     String  @default("")
+  active          Boolean @default(true)
+
+  sessions        Session[]
+  recurrenceRules RecurrenceRule[]
+}
+
+model RecurrenceRule {
+  id          String  @id @default(cuid())
+  dayOfWeek   Int // 0 = Sunday ... 6 = Saturday, in studio timezone
+  time        String // "HH:mm" in studio timezone
+  classTypeId String
+  trainerId   String
+  locationId  String?
+  capacity    Int?
+  active      Boolean @default(true)
+
+  classType ClassType @relation(fields: [classTypeId], references: [id])
+  trainer   Trainer   @relation(fields: [trainerId], references: [id])
+  location  Location? @relation(fields: [locationId], references: [id])
+  sessions  Session[]
+}
+
+model Session {
+  id               String        @id @default(cuid())
+  kind             SessionKind   @default(CLASS)
+  classTypeId      String?
+  trainerId        String
+  locationId       String?
+  startsAt         DateTime
+  durationMins     Int
+  capacity         Int
+  priceGHS         Int // pesewas
+  status           SessionStatus @default(SCHEDULED)
+  recurrenceRuleId String?
+
+  classType      ClassType?      @relation(fields: [classTypeId], references: [id])
+  trainer        Trainer         @relation(fields: [trainerId], references: [id])
+  location       Location?       @relation(fields: [locationId], references: [id])
+  recurrenceRule RecurrenceRule? @relation(fields: [recurrenceRuleId], references: [id])
+  bookings       Booking[]
+
+  @@index([startsAt])
+  @@index([trainerId, startsAt])
+  // Guards duplicate generation from the same rule for the same slot
+  @@unique([recurrenceRuleId, startsAt])
+}
+
+model Booking {
+  id          String        @id @default(cuid())
+  sessionId   String
+  memberId    String
+  status      BookingStatus @default(BOOKED)
+  paidWith    PaymentMethod?
+  amountGHS   Int           @default(0) // pesewas
+  paystackRef String?       @unique
+  // WAITLIST promotion: when promoted with a payment window, the deadline
+  promotionExpiresAt DateTime?
+  // Reminder SMS dedupe (rule 7)
+  reminder24At DateTime?
+  reminder2At  DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  session    Session     @relation(fields: [sessionId], references: [id])
+  member     Member      @relation(fields: [memberId], references: [id])
+  payoutLine PayoutLine?
+
+  @@index([sessionId, status])
+  @@index([memberId, status])
+}
+
+model Payment {
+  id          String        @id @default(cuid())
+  memberId    String
+  amountGHS   Int // pesewas
+  method      PaymentMethod
+  description String        @default("")
+  paystackRef String?       @unique
+  status      PaymentStatus @default(PENDING)
+  // Set when this payment is for a plan subscription/switch/renewal paid in
+  // cash — lets staff confirming it in the admin portal know which plan to
+  // activate, without parsing the description string.
+  planId      String?
+  createdAt   DateTime      @default(now())
+
+  member Member          @relation(fields: [memberId], references: [id])
+  plan   MembershipPlan? @relation(fields: [planId], references: [id])
+
+  @@index([memberId, status])
+}
+
+model Payout {
+  id                String       @id @default(cuid())
+  trainerId         String
+  periodStart       DateTime
+  periodEnd         DateTime
+  grossGHS          Int // pesewas
+  commissionPercent Int
+  amountGHS         Int // pesewas
+  status            PayoutStatus @default(PENDING)
+  paidAt            DateTime?
+  reference         String? // manual MoMo transfer ID
+  createdAt         DateTime     @default(now())
+
+  trainer Trainer      @relation(fields: [trainerId], references: [id])
+  lines   PayoutLine[]
+}
+
+model PayoutLine {
+  id        String @id @default(cuid())
+  payoutId  String
+  bookingId String @unique // a booking is paid out once, ever
+
+  payout  Payout  @relation(fields: [payoutId], references: [id])
+  booking Booking @relation(fields: [bookingId], references: [id])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String
+  entity    String
+  entityId  String
+  payload   Json?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([entity, entityId])
+  @@index([createdAt])
+}

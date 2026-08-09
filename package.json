@@ -1,0 +1,21 @@
+{
+  "name": "corestudio",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "admin"
+  ],
+  "scripts": {
+    "dev": "concurrently -n backend,admin -c blue,green \"npm run dev --workspace=backend\" \"npm run dev --workspace=admin\"",
+    "build": "npm run build --workspace=backend && npm run build --workspace=admin",
+    "lint": "npm run lint --workspace=backend && npm run lint --workspace=admin",
+    "db:migrate": "npm run db:migrate --workspace=backend",
+    "db:seed": "npm run db:seed --workspace=backend",
+    "db:studio": "npm run db:studio --workspace=backend",
+    "test": "npm run test --workspace=backend"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

@@ -1,0 +1,12 @@
+node_modules
+**/node_modules
+.next
+**/.next
+.git
+.env
+.env.local
+*.md
+mobile
+tests
+test-results
+docker-compose*.yml

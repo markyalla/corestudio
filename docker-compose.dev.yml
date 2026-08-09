@@ -1,0 +1,26 @@
+# Separate project name so this never collides with the production stack
+# (docker-compose.yml) — without this, both files default to the same
+# "corestudio" project and Compose treats their same-named "postgres"
+# service as one shared slot, recreating/destroying whichever one is running.
+name: corestudio-dev
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: corestudio-dev-db
+    environment:
+      POSTGRES_USER: corestudio
+      POSTGRES_PASSWORD: corestudio_dev
+      POSTGRES_DB: corestudio
+    ports:
+      - "5432:5432"
+    volumes:
+      - corestudio_dev_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U corestudio"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  corestudio_dev_pgdata:
