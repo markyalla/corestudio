@@ -203,7 +203,7 @@ function StudioSection({ studio, onRun }: { studio: Studio; onRun: (a: () => Pro
 }
 
 function PlansSection({ plans, perks, onRun }: { plans: Plan[]; perks: Perk[]; onRun: (a: () => Promise<string | null>, ok: string) => Promise<string | null> }) {
-  const [form, setForm] = useState({ name: "", price: "", classes: "", bonus: "0", cycleDays: "30", perkIds: [] as string[] });
+  const [form, setForm] = useState({ name: "", price: "", classes: "", bonus: "0", cycleDays: "30", description: "", perkIds: [] as string[] });
   const [editingId, setEditingId] = useState<string | null>(null);
 
   function togglePerk(list: string[], id: string): string[] {
@@ -223,6 +223,11 @@ function PlansSection({ plans, perks, onRun }: { plans: Plan[]; perks: Perk[]; o
                   {formatGHS(p.priceGHS)} · {p.classesPerCycle} classes + {p.bonusCredits} bonus / {p.cycleDays}d
                   {p.perks.length > 0 && ` · ${p.perks.map((pk) => pk.name).join(", ")}`}
                 </p>
+                {p.description ? (
+                  <p className="mt-0.5 truncate text-xs text-stone-400">{p.description}</p>
+                ) : (
+                  <p className="mt-0.5 text-xs text-amber-600">No description yet</p>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -252,6 +257,13 @@ function PlansSection({ plans, perks, onRun }: { plans: Plan[]; perks: Perk[]; o
         <input placeholder="Classes/cycle" type="number" value={form.classes} onChange={(e) => setForm({ ...form, classes: e.target.value })} className={`w-32 ${input}`} />
         <input placeholder="Bonus classes" type="number" value={form.bonus} onChange={(e) => setForm({ ...form, bonus: e.target.value })} className={`w-28 ${input}`} />
         <input placeholder="Cycle days" type="number" value={form.cycleDays} onChange={(e) => setForm({ ...form, cycleDays: e.target.value })} className={`w-28 ${input}`} />
+        <textarea
+          placeholder="Description — what members get, who it's for"
+          value={form.description}
+          onChange={(e) => setForm({ ...form, description: e.target.value })}
+          rows={2}
+          className={`w-full ${input}`}
+        />
         <div className="flex flex-wrap gap-2">
           {perks.map((perk) => (
             <label key={perk.id} className="flex items-center gap-1 rounded-lg border border-stone-300 px-2 py-1 text-xs">
@@ -276,10 +288,13 @@ function PlansSection({ plans, perks, onRun }: { plans: Plan[]; perks: Perk[]; o
                   classesPerCycle: Number(form.classes),
                   bonusCredits: Number(form.bonus || "0"),
                   cycleDays: Number(form.cycleDays),
+                  description: form.description,
                   perkIds: form.perkIds,
                 }),
               "Plan created.",
-            )
+            ).then((err) => {
+              if (!err) setForm({ name: "", price: "", classes: "", bonus: "0", cycleDays: "30", description: "", perkIds: [] });
+            })
           }
         >
           Add
@@ -294,6 +309,7 @@ function PlanEditRow({ plan, perks, onRun, onDone }: {
 }) {
   const [classes, setClasses] = useState(String(plan.classesPerCycle));
   const [bonus, setBonus] = useState(String(plan.bonusCredits));
+  const [description, setDescription] = useState(plan.description);
   const [perkIds, setPerkIds] = useState(plan.perks.map((p) => p.id));
 
   function togglePerk(id: string) {
@@ -301,7 +317,7 @@ function PlanEditRow({ plan, perks, onRun, onDone }: {
   }
 
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg bg-stone-50 p-3 text-xs">
+    <div className="mt-2 flex flex-wrap items-start gap-2 rounded-lg bg-stone-50 p-3 text-xs">
       <label className="flex items-center gap-1">
         Classes
         <input type="number" value={classes} onChange={(e) => setClasses(e.target.value)} className={`w-20 ${input}`} />
@@ -310,6 +326,13 @@ function PlanEditRow({ plan, perks, onRun, onDone }: {
         Bonus
         <input type="number" value={bonus} onChange={(e) => setBonus(e.target.value)} className={`w-20 ${input}`} />
       </label>
+      <textarea
+        placeholder="Description"
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        rows={2}
+        className={`w-full ${input}`}
+      />
       <div className="flex flex-wrap gap-2">
         {perks.map((perk) => (
           <label key={perk.id} className="flex items-center gap-1 rounded-lg border border-stone-300 px-2 py-1">
@@ -327,6 +350,7 @@ function PlanEditRow({ plan, perks, onRun, onDone }: {
                 id: plan.id,
                 classesPerCycle: Number(classes),
                 bonusCredits: Number(bonus),
+                description,
                 perkIds,
               }),
             "Plan updated.",
@@ -744,39 +768,65 @@ function LocationEditRow({ location, onRun, onDone }: {
   );
 }
 
-function ClassTypesSection({ classTypes, onRun }: { classTypes: ClassType[]; onRun: (a: () => Promise<string | null>, ok: string) => void }) {
-  const [form, setForm] = useState({ name: "", price: "", duration: "55", capacity: "8" });
+function ClassTypesSection({ classTypes, onRun }: { classTypes: ClassType[]; onRun: (a: () => Promise<string | null>, ok: string) => Promise<string | null> }) {
+  const [form, setForm] = useState({ name: "", price: "", duration: "55", capacity: "8", description: "" });
+  const [editingId, setEditingId] = useState<string | null>(null);
   return (
     <section className="rounded-2xl bg-white p-6 shadow-sm">
       <h2 className="text-sm font-medium text-stone-700">Class types</h2>
-      <table className="mt-3 w-full text-left text-sm">
-        <tbody>
-          {classTypes.map((c) => (
-            <tr key={c.id} className="border-t border-stone-100">
-              <td className="py-2 font-medium text-stone-800">{c.name}</td>
-              <td className="py-2 text-stone-600">{c.durationMins} min</td>
-              <td className="py-2 text-stone-600">{formatGHS(c.priceGHS)}</td>
-              <td className="py-2 text-stone-600">cap {c.defaultCapacity}</td>
-              <td className="py-2 text-right">
-                <div className="flex items-center justify-end gap-2">
-                  <button
-                    onClick={() => onRun(() => api("/api/class-types", "PATCH", { id: c.id, active: !c.active }), "Class type updated.")}
-                    className={`rounded-full px-3 py-1 text-xs ${c.active ? "bg-emerald-50 text-emerald-700" : "bg-stone-100 text-stone-500"}`}
-                  >
-                    {c.active ? "Active" : "Inactive"}
-                  </button>
-                  <DeleteButton path="/api/class-types" id={c.id} label={c.name} onRun={onRun} />
-                </div>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <div className="mt-3 flex flex-wrap gap-2 border-t border-stone-100 pt-3">
+      <p className="mt-1 text-xs text-stone-400">
+        The description shows to members on the class/session detail screen in the app — what it is,
+        who it&apos;s for, what to bring.
+      </p>
+      <div className="mt-3 divide-y divide-stone-100">
+        {classTypes.map((c) => (
+          <div key={c.id} className="py-2 text-sm">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="font-medium text-stone-800">{c.name}</p>
+                <p className="text-stone-600">
+                  {c.durationMins} min · {formatGHS(c.priceGHS)} · cap {c.defaultCapacity}
+                </p>
+                {c.description ? (
+                  <p className="mt-0.5 truncate text-xs text-stone-400">{c.description}</p>
+                ) : (
+                  <p className="mt-0.5 text-xs text-amber-600">No description yet</p>
+                )}
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  onClick={() => onRun(() => api("/api/class-types", "PATCH", { id: c.id, active: !c.active }), "Class type updated.")}
+                  className={`rounded-full px-3 py-1 text-xs ${c.active ? "bg-emerald-50 text-emerald-700" : "bg-stone-100 text-stone-500"}`}
+                >
+                  {c.active ? "Active" : "Inactive"}
+                </button>
+                <button
+                  onClick={() => setEditingId(editingId === c.id ? null : c.id)}
+                  className="rounded-lg border border-stone-300 px-3 py-1 text-xs text-stone-600"
+                >
+                  {editingId === c.id ? "Close" : "Edit"}
+                </button>
+                <DeleteButton path="/api/class-types" id={c.id} label={c.name} onRun={onRun} />
+              </div>
+            </div>
+            {editingId === c.id && (
+              <ClassTypeEditRow classType={c} onRun={onRun} onDone={() => setEditingId(null)} />
+            )}
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 flex flex-wrap items-start gap-2 border-t border-stone-100 pt-3">
         <input placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className={input} />
         <input placeholder="Price GHS" type="number" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} className={`w-28 ${input}`} />
         <input placeholder="Mins" type="number" value={form.duration} onChange={(e) => setForm({ ...form, duration: e.target.value })} className={`w-20 ${input}`} />
         <input placeholder="Capacity" type="number" value={form.capacity} onChange={(e) => setForm({ ...form, capacity: e.target.value })} className={`w-24 ${input}`} />
+        <textarea
+          placeholder="Description — what it is, who it's for, what to bring"
+          value={form.description}
+          onChange={(e) => setForm({ ...form, description: e.target.value })}
+          rows={2}
+          className={`w-full ${input}`}
+        />
         <button
           disabled={!form.name || !form.price}
           className={btn}
@@ -788,15 +838,66 @@ function ClassTypesSection({ classTypes, onRun }: { classTypes: ClassType[]; onR
                   priceGHS: parseGHS(form.price),
                   durationMins: Number(form.duration),
                   defaultCapacity: Number(form.capacity),
+                  description: form.description,
                 }),
               "Class type created.",
-            )
+            ).then((err) => {
+              if (!err) setForm({ name: "", price: "", duration: "55", capacity: "8", description: "" });
+            })
           }
         >
           Add
         </button>
       </div>
     </section>
+  );
+}
+
+function ClassTypeEditRow({ classType, onRun, onDone }: {
+  classType: ClassType; onRun: (a: () => Promise<string | null>, ok: string) => Promise<string | null>; onDone: () => void;
+}) {
+  const [form, setForm] = useState({
+    name: classType.name,
+    price: String(classType.priceGHS / 100),
+    duration: String(classType.durationMins),
+    capacity: String(classType.defaultCapacity),
+    description: classType.description,
+  });
+  return (
+    <div className="mt-2 flex flex-wrap items-start gap-2 rounded-lg bg-stone-50 p-3 text-xs">
+      <input placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className={input} />
+      <input placeholder="Price GHS" type="number" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} className={`w-28 ${input}`} />
+      <input placeholder="Mins" type="number" value={form.duration} onChange={(e) => setForm({ ...form, duration: e.target.value })} className={`w-20 ${input}`} />
+      <input placeholder="Capacity" type="number" value={form.capacity} onChange={(e) => setForm({ ...form, capacity: e.target.value })} className={`w-24 ${input}`} />
+      <textarea
+        placeholder="Description"
+        value={form.description}
+        onChange={(e) => setForm({ ...form, description: e.target.value })}
+        rows={2}
+        className={`w-full ${input}`}
+      />
+      <button
+        className={btn}
+        onClick={() =>
+          onRun(
+            () =>
+              api("/api/class-types", "PATCH", {
+                id: classType.id,
+                name: form.name,
+                priceGHS: parseGHS(form.price),
+                durationMins: Number(form.duration),
+                defaultCapacity: Number(form.capacity),
+                description: form.description,
+              }),
+            "Class type updated.",
+          ).then((err) => {
+            if (!err) onDone();
+          })
+        }
+      >
+        Save
+      </button>
+    </div>
   );
 }
 
