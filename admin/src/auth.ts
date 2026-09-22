@@ -12,7 +12,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
       },
-      authorize: verifyCredentials,
+      authorize: (creds) => verifyCredentials(creds, "web"),
     }),
   ],
 });

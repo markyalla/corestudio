@@ -6,7 +6,7 @@ import { buildPdf, type PdfLine } from "@/lib/pdf";
 /** Payout statement PDF. Staff, or the trainer the payout belongs to. */
 export const GET = apiHandler(
   async (_req: Request, ctx: { params: Promise<{ id: string }> }) => {
-    const session = await requireRole(["OWNER", "ADMIN", "TRAINER"]);
+    const session = await requireRole(["OWNER", "ADMIN", "ACCOUNTANT", "TRAINER"]);
     const { id } = await ctx.params;
 
     const payout = await prisma.payout.findUnique({
@@ -53,7 +53,7 @@ export const GET = apiHandler(
       const b = line.booking;
       lines.push({
         text: `${b.session.startsAt.toISOString().slice(0, 16).replace("T", " ")}  ${
-          (b.session.classType?.name ?? "PT").padEnd(20)
+          (b.session.classType?.name ?? "Private class").padEnd(20)
         }  ${b.member.user.name.padEnd(22)}  ${formatGHS(b.amountGHS)}`,
         size: 9,
         indent: 6,
@@ -63,7 +63,16 @@ export const GET = apiHandler(
     lines.push(
       { text: "" },
       { text: `Gross bookings: ${formatGHS(payout.grossGHS)}`, indent: 6 },
-      { text: `Commission: ${payout.commissionPercent}%`, indent: 6 },
+    );
+    if (payout.ptGrossGHS > 0) {
+      lines.push(
+        { text: `  of which group: ${formatGHS(payout.grossGHS - payout.ptGrossGHS)} @ ${payout.commissionPercent}%`, indent: 6 },
+        { text: `  of which private: ${formatGHS(payout.ptGrossGHS)} @ ${payout.ptCommissionPercent}%`, indent: 6 },
+      );
+    } else {
+      lines.push({ text: `Commission: ${payout.commissionPercent}%`, indent: 6 });
+    }
+    lines.push(
       { text: "" },
       { text: `Amount due: ${formatGHS(payout.amountGHS)}`, size: 14, bold: true },
     );

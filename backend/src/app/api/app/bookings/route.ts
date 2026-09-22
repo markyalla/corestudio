@@ -2,11 +2,15 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { ApiError, apiHandler, requireMobileAuth } from "@/lib/rbac";
-import { bookSession } from "@/lib/booking";
+import { bookSession, bookSessionCash } from "@/lib/booking";
 import { startBookingCheckout } from "@/lib/payment-flows";
 import type { PaymentMethod } from "@prisma/client";
 
-const schema = z.object({ sessionId: z.string().min(1) });
+const schema = z.object({
+  sessionId: z.string().min(1),
+  // "cash" → book now, pay in person; staff confirm the PENDING payment.
+  method: z.enum(["cash"]).optional(),
+});
 
 /** Member's own bookings (upcoming + history), for the Bookings tab and the
  *  Home screen's "next booking" card. */
@@ -24,23 +28,49 @@ export const GET = apiHandler(async (req: Request) => {
     orderBy: { session: { startsAt: "desc" } },
   });
 
+  // So the app can navigate straight from a booking (Home's "next booking"
+  // card, Bookings tab) into the full session detail screen, which needs
+  // occupancy — not just this member's own status.
+  const takenCounts = await prisma.booking.groupBy({
+    by: ["sessionId"],
+    where: { sessionId: { in: bookings.map((b) => b.sessionId) }, status: { in: ["BOOKED", "ATTENDED"] } },
+    _count: true,
+  });
+  const takenMap = new Map(takenCounts.map((c) => [c.sessionId, c._count]));
+
   const now = Date.now();
   const cutoffMs = studio.cancelCutoffHours * 60 * 60 * 1000;
 
   return NextResponse.json({
     cancelCutoffHours: studio.cancelCutoffHours,
+    bookingCutoffMinutes: studio.bookingCutoffMinutes,
     bookings: bookings.map((b) => ({
       id: b.id,
       status: b.status,
       amountGHS: b.amountGHS,
+      cancelReason: b.cancelReason,
       promotionExpiresAt: b.promotionExpiresAt,
       session: {
         id: b.session.id,
         startsAt: b.session.startsAt,
         durationMins: b.session.durationMins,
-        classType: b.session.classType ? { name: b.session.classType.name } : null,
-        trainer: { name: b.session.trainer.user.name },
-        location: b.session.location ? { name: b.session.location.name, address: b.session.location.address } : null,
+        capacity: b.session.capacity,
+        taken: takenMap.get(b.session.id) ?? 0,
+        priceGHS: b.session.priceGHS,
+        classType: b.session.classType
+          ? { id: b.session.classType.id, name: b.session.classType.name, description: b.session.classType.description }
+          : null,
+        trainer: {
+          id: b.session.trainer.id,
+          name: b.session.trainer.user.name,
+          specialty: b.session.trainer.specialty,
+          bio: b.session.trainer.bio,
+          photoUrl: b.session.trainer.photoUrl,
+          calendarColor: b.session.trainer.calendarColor,
+        },
+        location: b.session.location
+          ? { id: b.session.location.id, name: b.session.location.name, address: b.session.location.address }
+          : null,
       },
       canCancel: b.status === "BOOKED" && b.session.startsAt.getTime() - now > cutoffMs,
     })),
@@ -51,7 +81,7 @@ export const GET = apiHandler(async (req: Request) => {
  *  plan credit → wallet → Paystack (Phase 4). Full sessions become WAITLIST. */
 export const POST = apiHandler(async (req: Request) => {
   const auth = await requireMobileAuth(req, ["MEMBER"]);
-  const { sessionId } = schema.parse(await req.json());
+  const { sessionId, method } = schema.parse(await req.json());
 
   const member = await prisma.member.findFirst({
     where: { userId: auth.user.id },
@@ -64,6 +94,12 @@ export const POST = apiHandler(async (req: Request) => {
     include: { classType: true },
   });
   if (!session) throw new ApiError(404, "Session not found");
+
+  // Explicit "pay at the studio" — book now, staff confirm the cash payment.
+  if (method === "cash") {
+    const booking = await bookSessionCash({ sessionId, memberId: member.id, actorUserId: auth.user.id });
+    return NextResponse.json({ booking, cash: true }, { status: 201 });
+  }
 
   // Checked here (not just inside bookSession()) so it also covers the
   // Paystack checkout path below, which creates the booking later via the
@@ -79,9 +115,25 @@ export const POST = apiHandler(async (req: Request) => {
   });
   const isFull = taken >= session.capacity;
 
+  const hasPackage =
+    !isFull &&
+    !!session.classTypeId &&
+    (await prisma.memberPackage.count({
+      where: {
+        memberId: member.id,
+        package: { classTypeId: session.classTypeId },
+        sessionsLeft: { gt: 0 },
+        expiresAt: { gt: new Date() },
+      },
+    })) > 0;
+
   let paidWith: PaymentMethod;
   if (isFull) {
     paidWith = "CREDIT"; // irrelevant — bookSession waitlists before charging
+  } else if (hasPackage) {
+    // A package is already paid for and scoped to this exact service — use
+    // it ahead of the generic plan credit.
+    paidWith = "PACKAGE";
   } else if (member.creditsLeft > 0) {
     paidWith = "CREDIT";
   } else if (session.priceGHS === 0) {
@@ -97,7 +149,7 @@ export const POST = apiHandler(async (req: Request) => {
     const { authorizationUrl, reference } = await startBookingCheckout({
       member,
       session,
-      className: session.classType?.name ?? "PT",
+      className: session.classType?.name ?? "Private class",
     });
     return NextResponse.json({ authorizationUrl, reference }, { status: 200 });
   }

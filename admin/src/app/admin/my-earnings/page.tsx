@@ -34,7 +34,7 @@ export default async function MyEarningsPage() {
           <p className="text-xs text-stone-500">Accrued (not yet paid out)</p>
           <p className="mt-1 text-2xl font-semibold text-stone-900">{formatGHS(owed?.amountGHS ?? 0)}</p>
           <p className="mt-1 text-xs text-stone-400">
-            {owed?.bookingIds.length ?? 0} bookings · {trainer.commissionPercent}% commission
+            {owed?.bookingIds.length ?? 0} bookings · {trainer.commissionPercent}% group · {trainer.ptCommissionPercent}% private
           </p>
         </div>
         <div className="rounded-2xl bg-white p-5 shadow-sm">

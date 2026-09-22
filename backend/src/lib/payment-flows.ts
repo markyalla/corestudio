@@ -9,7 +9,7 @@ import {
   initializeTransaction,
   newReference,
 } from "./paystack";
-import type { Member, MembershipPlan, Prisma, Session, User } from "@prisma/client";
+import type { Member, MembershipPlan, Package, Prisma, Session, User } from "@prisma/client";
 
 function appUrl(path: string): string {
   return `${process.env.BACKEND_PUBLIC_URL ?? "http://localhost:4000"}${path}`;
@@ -94,6 +94,57 @@ export async function startRenewalCheckout(opts: {
   return { authorizationUrl: tx.authorization_url, reference };
 }
 
+/** Self-serve purchase of a one-time Package (e.g. a Thai massage 8-session
+ *  bundle, or a trainer-locked Pilates bundle) — same checkout shape as plan
+ *  renewal, but fulfilment (handleChargeSuccess, kind "PACKAGE") creates a
+ *  fresh MemberPackage rather than touching the member's generic credits. */
+export async function startPackageCheckout(opts: {
+  member: Member & { user: User };
+  pkg: Package;
+}) {
+  const reference = newReference("pk");
+  await prisma.payment.create({
+    data: {
+      memberId: opts.member.id,
+      packageId: opts.pkg.id,
+      amountGHS: opts.pkg.priceGHS,
+      method: "MOMO",
+      description: `${opts.pkg.name} package`,
+      paystackRef: reference,
+      status: "PENDING",
+    },
+  });
+  const tx = await initializeTransaction({
+    email: opts.member.user.email,
+    amountPesewas: opts.pkg.priceGHS,
+    reference,
+    metadata: { kind: "PACKAGE", memberId: opts.member.id, packageId: opts.pkg.id },
+    callbackUrl: appUrl(PAY_CALLBACK_PATH),
+    customerName: opts.member.user.name,
+    customerPhone: opts.member.user.phone ?? undefined,
+  });
+  return { authorizationUrl: tx.authorization_url, reference };
+}
+
+/** Creates a PENDING cash payment for a Package — no Paystack involved.
+ *  Staff confirm it in person (confirmCashPayment below), which grants it. */
+export async function createCashPackagePayment(opts: {
+  member: Member & { user: User };
+  pkg: Package;
+}) {
+  const payment = await prisma.payment.create({
+    data: {
+      memberId: opts.member.id,
+      packageId: opts.pkg.id,
+      amountGHS: opts.pkg.priceGHS,
+      method: "CASH",
+      description: `${opts.pkg.name} package (cash — pending)`,
+      status: "PENDING",
+    },
+  });
+  return payment;
+}
+
 /** Creates a PENDING cash payment for a plan — no Paystack involved. The
  *  member picked "pay with cash" in the app; staff confirm it in person at
  *  the studio (see confirmCashPlanPayment below), which is what actually
@@ -137,9 +188,12 @@ export async function confirmCashPayment(opts: { paymentId: string; actorUserId:
       action: "payment.confirm_cash",
       entity: "Payment",
       entityId: payment.id,
-      payload: { memberId: payment.memberId, planId: payment.planId },
+      payload: { memberId: payment.memberId, planId: payment.planId, packageId: payment.packageId },
     });
 
+    if (payment.packageId) {
+      return activatePackage(tx, { memberId: payment.memberId, packageId: payment.packageId, reference: payment.id });
+    }
     if (!payment.planId) return { note: "no plan on this payment" };
     return activateMembership(tx, { memberId: payment.memberId, planId: payment.planId });
   });
@@ -175,7 +229,7 @@ export async function startWaitlistClaimCheckout(opts: {
       memberId: booking.memberId,
       amountGHS: booking.session.priceGHS,
       method: "MOMO",
-      description: `Waitlist spot: ${booking.session.classType?.name ?? "PT"}`,
+      description: `Waitlist spot: ${booking.session.classType?.name ?? "Private class"}`,
       paystackRef: reference,
       status: "PENDING",
     },
@@ -234,6 +288,42 @@ async function activateMembership(
 }
 
 /**
+ * Grants a fresh MemberPackage — a new, independent bundle of sessions with
+ * its own expiry, on top of whatever packages the member already has (buying
+ * a second bundle doesn't touch the first). Shared by both the Paystack
+ * success path (handleChargeSuccess, kind "PACKAGE") and staff confirming a
+ * cash payment (confirmCashPayment above).
+ */
+async function activatePackage(
+  tx: Prisma.TransactionClient,
+  opts: { memberId: string; packageId: string; reference?: string },
+) {
+  const member = await tx.member.findUnique({ where: { id: opts.memberId }, include: { user: true } });
+  const pkg = await tx.package.findUnique({ where: { id: opts.packageId } });
+  if (!member || !pkg) return { note: "member/package gone" };
+
+  const memberPackage = await tx.memberPackage.create({
+    data: {
+      memberId: member.id,
+      packageId: pkg.id,
+      sessionsLeft: pkg.sessionsGranted,
+      expiresAt: new Date(Date.now() + pkg.validDays * 24 * 60 * 60 * 1000),
+    },
+  });
+  await audit(tx, {
+    userId: member.userId,
+    action: "member.package_activated",
+    entity: "MemberPackage",
+    entityId: memberPackage.id,
+    payload: { packageId: pkg.id, reference: opts.reference },
+  });
+  return {
+    phone: member.user.phone,
+    message: `${pkg.name} is active — ${pkg.sessionsGranted} sessions added, valid for ${pkg.validDays} days.`,
+  };
+}
+
+/**
  * Fulfils a successful charge. Idempotent: keyed on the Payment row by
  * paystackRef — a second delivery (webhook retry, verify fallback) is a no-op.
  */
@@ -249,6 +339,21 @@ export async function handleChargeSuccess(event: {
     const payment = await tx.payment.findUnique({ where: { paystackRef: event.reference } });
     if (!payment) return { note: "unknown reference" };
     if (payment.status === "CONFIRMED") return { note: "already processed" };
+
+    // Defense in depth: the Payment row's amountGHS was fixed at checkout
+    // time from server-computed pricing (never client input), before the
+    // reference was ever handed to Paystack. Refuse to fulfil anything
+    // Paystack reports as charged for a different amount — leaves the
+    // payment PENDING for manual review rather than granting value for a
+    // short charge.
+    if (event.amount !== payment.amountGHS) {
+      await audit(tx, {
+        userId: null, action: "payment.amount_mismatch", entity: "Payment",
+        entityId: payment.id,
+        payload: { reference: event.reference, expectedGHS: payment.amountGHS, chargedGHS: event.amount },
+      });
+      return { note: "amount mismatch" };
+    }
 
     const method = channelToMethod(event.channel);
     await tx.payment.update({
@@ -325,6 +430,14 @@ export async function handleChargeSuccess(event: {
       return activateMembership(tx, {
         memberId: meta.memberId,
         planId: meta.planId,
+        reference: event.reference,
+      });
+    }
+
+    if (meta.kind === "PACKAGE") {
+      return activatePackage(tx, {
+        memberId: meta.memberId,
+        packageId: meta.packageId,
         reference: event.reference,
       });
     }

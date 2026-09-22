@@ -6,8 +6,7 @@
 corestudio/
 ├── prisma/
 │   ├── schema.prisma          # data model (see DATA-MODEL.md)
-│   ├── migrations/            # SQL migrations
-│   └── seed.ts                # demo data (npm run db:seed)
+│   └── migrations/            # SQL migrations
 ├── src/
 │   ├── app/
 │   │   ├── page.tsx           # public landing + live timetable
@@ -47,8 +46,7 @@ corestudio/
 ├── tests/                     # Vitest (isolated corestudio_test DB)
 ├── e2e/                       # Playwright booking flow
 ├── public/sw.js               # service worker
-├── Dockerfile  docker-compose.yml  nginx.conf  docker-entrypoint.sh
-└── docker-compose.dev.yml     # dev Postgres only
+└── Dockerfile  docker-compose.yml  nginx.conf  docker-entrypoint.sh
 ```
 
 ## Layering rule

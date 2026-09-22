@@ -15,15 +15,24 @@ export const createSessionSchema = z.object({
   recurring: z.boolean().default(false),
 });
 
-export const updateSessionSchema = z.object({
-  action: z.enum(["CANCEL"]),
-});
+export const updateSessionSchema = z.union([
+  z.object({ action: z.enum(["CANCEL"]), mode: z.enum(["REFUND", "RESCHEDULE"]).default("REFUND") }),
+  z.object({
+    trainerId: z.string().min(1).optional(),
+    locationId: z.string().min(1).optional(),
+    startsAt: z.coerce.date().optional(),
+    capacity: z.number().int().positive().optional(),
+    priceGHS: z.number().int().nonnegative().optional(),
+  }),
+]);
 
 export const createBookingSchema = z.object({
   sessionId: z.string().min(1),
   memberId: z.string().min(1),
-  // Front desk can take cash/comp; CREDIT consumes a plan credit.
-  paidWith: z.enum(["CREDIT", "CASH", "COMP", "MOMO", "CARD"]).default("CREDIT"),
+  // Front desk can take cash/comp; CREDIT consumes a plan credit; PACKAGE
+  // consumes a session from a matching MemberPackage (bookSession() 404s if
+  // the member has none for this session's class type).
+  paidWith: z.enum(["CREDIT", "PACKAGE", "CASH", "COMP", "MOMO", "CARD"]).default("CREDIT"),
 });
 
 export const updateBookingSchema = z.object({
@@ -35,7 +44,7 @@ export const createMemberSchema = z.object({
   email: z.string().email().max(320),
   phone: z.string().min(9).max(20),
   planId: z.string().optional(),
-  password: z.string().min(8).max(200).optional(),
+  password: z.string().min(8).max(200),
 });
 
 export const updateMemberSchema = z.object({

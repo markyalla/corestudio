@@ -17,6 +17,7 @@ export default async function BookingsPage({
 }) {
   const session = await auth();
   if (session?.user?.role === "TRAINER") redirect("/admin/timetable");
+  if (session?.user?.role === "ACCOUNTANT") redirect("/admin/payroll");
 
   const { status, from, to, q } = await searchParams;
 
@@ -95,7 +96,7 @@ export default async function BookingsPage({
                   </Link>
                 </td>
                 <td className="px-4 py-2.5 text-stone-600">
-                  {b.session.classType?.name ?? "PT"} · {b.session.startsAt.toISOString().slice(0, 16).replace("T", " ")}
+                  {b.session.classType?.name ?? "Private class"} · {b.session.startsAt.toISOString().slice(0, 16).replace("T", " ")}
                 </td>
                 <td className="px-4 py-2.5 text-stone-600">{b.session.trainer.user.name}</td>
                 <td className="px-4 py-2.5">

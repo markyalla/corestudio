@@ -26,12 +26,34 @@ export type TrainerOwed = {
   trainerId: string;
   trainerName: string;
   commissionPercent: number;
-  grossGHS: number;
+  ptCommissionPercent: number;
+  grossGHS: number; // total gross (group + PT)
+  ptGrossGHS: number; // PT subset of grossGHS
   amountGHS: number;
   bookingIds: string[];
   periodStart: Date | null;
   periodEnd: Date | null;
 };
+
+/**
+ * Splits eligible bookings into group vs private (PT) and applies each rate.
+ * amountGHS = groupGross × commissionPercent + ptGross × ptCommissionPercent.
+ */
+function splitPayout(
+  bookings: { amountGHS: number; session: { kind: string } }[],
+  commissionPercent: number,
+  ptCommissionPercent: number,
+) {
+  const ptGrossGHS = bookings
+    .filter((b) => b.session.kind === "PT")
+    .reduce((sum, b) => sum + b.amountGHS, 0);
+  const grossGHS = bookings.reduce((sum, b) => sum + b.amountGHS, 0);
+  const groupGrossGHS = grossGHS - ptGrossGHS;
+  const amountGHS =
+    Math.floor((groupGrossGHS * commissionPercent) / 100) +
+    Math.floor((ptGrossGHS * ptCommissionPercent) / 100);
+  return { grossGHS, ptGrossGHS, amountGHS };
+}
 
 /** Computes what is currently owed to each trainer (unpaid eligible bookings × commission). */
 export async function computeOwedPerTrainer(): Promise<TrainerOwed[]> {
@@ -41,17 +63,23 @@ export async function computeOwedPerTrainer(): Promise<TrainerOwed[]> {
   for (const trainer of trainers) {
     const bookings = await prisma.booking.findMany({
       where: eligibleBookingsWhere(trainer.id),
-      include: { session: { select: { startsAt: true } } },
+      include: { session: { select: { startsAt: true, kind: true } } },
       orderBy: { createdAt: "asc" },
     });
-    const grossGHS = bookings.reduce((sum, b) => sum + b.amountGHS, 0);
+    const { grossGHS, ptGrossGHS, amountGHS } = splitPayout(
+      bookings,
+      trainer.commissionPercent,
+      trainer.ptCommissionPercent,
+    );
     const starts = bookings.map((b) => b.session.startsAt.getTime());
     result.push({
       trainerId: trainer.id,
       trainerName: trainer.user.name,
       commissionPercent: trainer.commissionPercent,
+      ptCommissionPercent: trainer.ptCommissionPercent,
       grossGHS,
-      amountGHS: Math.floor((grossGHS * trainer.commissionPercent) / 100),
+      ptGrossGHS,
+      amountGHS,
       bookingIds: bookings.map((b) => b.id),
       periodStart: starts.length ? new Date(Math.min(...starts)) : null,
       periodEnd: starts.length ? new Date(Math.max(...starts)) : null,
@@ -75,12 +103,16 @@ export async function createPayout(opts: { trainerId: string; actorUserId: strin
 
     const bookings = await tx.booking.findMany({
       where: eligibleBookingsWhere(trainer.id),
-      include: { session: { select: { startsAt: true } } },
+      include: { session: { select: { startsAt: true, kind: true } } },
       orderBy: { createdAt: "asc" },
     });
     if (bookings.length === 0) throw new ApiError(400, "Nothing owed to this trainer");
 
-    const grossGHS = bookings.reduce((sum, b) => sum + b.amountGHS, 0);
+    const { grossGHS, ptGrossGHS, amountGHS } = splitPayout(
+      bookings,
+      trainer.commissionPercent,
+      trainer.ptCommissionPercent,
+    );
     const starts = bookings.map((b) => b.session.startsAt.getTime());
 
     const payout = await tx.payout.create({
@@ -90,7 +122,9 @@ export async function createPayout(opts: { trainerId: string; actorUserId: strin
         periodEnd: new Date(Math.max(...starts)),
         grossGHS,
         commissionPercent: trainer.commissionPercent,
-        amountGHS: Math.floor((grossGHS * trainer.commissionPercent) / 100),
+        ptGrossGHS,
+        ptCommissionPercent: trainer.ptCommissionPercent,
+        amountGHS,
         status: "PENDING",
         lines: {
           create: bookings.map((b) => ({ bookingId: b.id })),
@@ -104,7 +138,7 @@ export async function createPayout(opts: { trainerId: string; actorUserId: strin
       action: "payout.create",
       entity: "Payout",
       entityId: payout.id,
-      payload: { trainerId: trainer.id, grossGHS, amountGHS: payout.amountGHS, lines: bookings.length },
+      payload: { trainerId: trainer.id, grossGHS, ptGrossGHS, amountGHS: payout.amountGHS, lines: bookings.length },
     });
     return payout;
   });

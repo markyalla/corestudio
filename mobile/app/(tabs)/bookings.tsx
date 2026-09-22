@@ -20,6 +20,7 @@ interface BookingItem {
   id: string;
   status: string;
   amountGHS: number;
+  cancelReason: string | null;
   promotionExpiresAt: string | null;
   session: {
     startsAt: string;
@@ -149,13 +150,17 @@ export default function BookingsScreen() {
           <View style={[styles.card, shadow.card]}>
             <View style={styles.cardTop}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.cardTitle}>{item.session.classType?.name ?? "PT session"}</Text>
+                <Text style={styles.cardTitle}>{item.session.classType?.name ?? "Private class session"}</Text>
                 <Text style={styles.cardSub}>
                   {new Date(item.session.startsAt).toLocaleString()} · {item.session.trainer.name}
                 </Text>
               </View>
               <StatusPill status={item.status} />
             </View>
+
+            {item.status === "CANCELLED" && item.cancelReason && (
+              <Text style={styles.rescheduleNote}>{item.cancelReason}</Text>
+            )}
 
             {item.canCancel && (
               <Pressable
@@ -222,6 +227,7 @@ const styles = StyleSheet.create({
   cardTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 10 },
   cardTitle: { fontSize: 16, fontWeight: "600", color: colors.text },
   cardSub: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
+  rescheduleNote: { fontSize: 12, color: colors.textMuted, marginTop: 10, fontStyle: "italic" },
   button: {
     flexDirection: "row",
     justifyContent: "center",

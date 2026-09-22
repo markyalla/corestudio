@@ -12,7 +12,8 @@ function secretKey(): string {
 export type ChargeMetadata =
   | { kind: "BOOKING"; sessionId: string; memberId: string; walletApplied: number }
   | { kind: "RENEWAL"; memberId: string; planId: string; walletApplied: number }
-  | { kind: "WAITLIST_CLAIM"; bookingId: string };
+  | { kind: "WAITLIST_CLAIM"; bookingId: string }
+  | { kind: "PACKAGE"; memberId: string; packageId: string };
 
 /** Starts a Paystack checkout (card + all Ghanaian mobile money). Amount in pesewas. */
 export async function initializeTransaction(opts: {

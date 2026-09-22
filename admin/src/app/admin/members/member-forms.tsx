@@ -23,7 +23,7 @@ export function NewMemberButton({ plans }: { plans: PlanOpt[] }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [form, setForm] = useState({ name: "", email: "", phone: "", planId: "" });
+  const [form, setForm] = useState({ name: "", email: "", phone: "", planId: "", password: "" });
 
   async function submit() {
     setError(null);
@@ -34,7 +34,7 @@ export function NewMemberButton({ plans }: { plans: PlanOpt[] }) {
     if (err) setError(err);
     else {
       setOpen(false);
-      setForm({ name: "", email: "", phone: "", planId: "" });
+      setForm({ name: "", email: "", phone: "", planId: "", password: "" });
       router.refresh();
     }
   }
@@ -60,12 +60,13 @@ export function NewMemberButton({ plans }: { plans: PlanOpt[] }) {
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}
           </select>
-          <p className="text-xs text-stone-400">A temporary password is texted to their phone.</p>
+          <input type="password" placeholder="Password (8+ characters)" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="w-full rounded-lg border border-stone-300 px-3 py-2" />
+          <p className="text-xs text-stone-400">Share this password with them; they change it in the app.</p>
           {error && <p className="text-red-600">{error}</p>}
         </div>
         <div className="mt-5 flex justify-end gap-2">
           <button onClick={() => setOpen(false)} className="rounded-lg border border-stone-300 px-4 py-2 text-sm">Cancel</button>
-          <button onClick={submit} disabled={!form.name || !form.email || !form.phone} className="rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
+          <button onClick={submit} disabled={!form.name || !form.email || !form.phone || form.password.length < 8} className="rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
             Create
           </button>
         </div>

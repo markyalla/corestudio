@@ -5,7 +5,7 @@ import { colors } from "@/lib/theme";
 
 type IconName = keyof typeof Ionicons.glyphMap;
 
-function TabIcon({ name, focused }: { name: IconName; color: string; focused: boolean }) {
+function TabIcon({ name, focused }: { name: IconName; focused: boolean }) {
   return (
     <Ionicons
       name={focused ? name : (`${name}-outline` as IconName)}

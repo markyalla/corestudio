@@ -14,8 +14,14 @@ export const GET = apiHandler(async (req: Request) => {
   const now = new Date();
   const windowEnd = new Date(now.getTime() + studio.advanceBookingDays * 24 * 60 * 60 * 1000);
 
+  // Once a member has picked their studio location, only show sessions at
+  // that location (plus any session with no location assigned).
+  const locationFilter = member.preferredLocationId
+    ? { OR: [{ locationId: member.preferredLocationId }, { locationId: null }] }
+    : {};
+
   const sessions = await prisma.session.findMany({
-    where: { startsAt: { gte: now, lte: windowEnd }, status: "SCHEDULED" },
+    where: { startsAt: { gte: now, lte: windowEnd }, status: "SCHEDULED", ...locationFilter },
     include: {
       classType: true,
       trainer: { include: { user: true } },
@@ -54,6 +60,7 @@ export const GET = apiHandler(async (req: Request) => {
         specialty: s.trainer.specialty,
         bio: s.trainer.bio,
         photoUrl: s.trainer.photoUrl,
+        calendarColor: s.trainer.calendarColor,
       },
       location: s.location ? { id: s.location.id, name: s.location.name, address: s.location.address } : null,
       myStatus: s.bookings[0]?.status ?? null,

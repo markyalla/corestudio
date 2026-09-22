@@ -1,8 +1,12 @@
-/** P4Studio palette — Apple/iOS green on white, native-feeling neutrals. */
+// Primary accent is the P4Studio logo's dusty-rose (#E0C2C0, sampled from
+// assets/p4.png / icon.png) — "green" is a legacy name kept because it's used
+// as the accent-color key across every screen; the hue itself is rose, not green.
+/** P4Studio palette — brand dusty-rose on white, native-feeling neutrals. */
 export const colors = {
-  green: "#34C759", // iOS system green
-  greenDark: "#248A3D", // pressed/dark state
-  greenTint: "#E8F9EC", // pale green for badges/cards
+  green: "#B85851", // primary accent — deepened brand rose (enough contrast for white text)
+  greenDark: "#853832", // pressed/dark state
+  greenTint: "#F6E6E5", // pale rose for badges/cards
+
   white: "#FFFFFF",
   background: "#FFFFFF",
   card: "#F7F8F7",

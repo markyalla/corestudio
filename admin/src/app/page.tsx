@@ -3,7 +3,7 @@ import { prisma } from "@backend/lib/prisma";
 import { fmtTime, startOfUTCDay } from "@backend/lib/dates";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "CoreStudio Pilates — Accra" };
+export const metadata = { title: "P4Studio Pilates — Accra" };
 
 export default async function Landing() {
   const from = startOfUTCDay(new Date());
@@ -86,7 +86,7 @@ export default async function Landing() {
       </section>
 
       <footer className="border-t border-stone-200 py-6 text-center text-xs text-stone-400">
-        CoreStudio Pilates · Accra, Ghana
+        P4Studio Pilates · Accra, Ghana
       </footer>
     </main>
   );

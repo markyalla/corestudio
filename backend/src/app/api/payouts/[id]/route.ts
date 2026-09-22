@@ -10,7 +10,7 @@ const schema = z.object({
 
 export const PATCH = apiHandler(
   async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
-    const session = await requireRole(["OWNER", "ADMIN"]);
+    const session = await requireRole(["OWNER", "ADMIN", "ACCOUNTANT"]);
     const { id } = await ctx.params;
     const body = schema.parse(await req.json());
 

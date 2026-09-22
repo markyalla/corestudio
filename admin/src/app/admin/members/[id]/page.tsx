@@ -32,10 +32,21 @@ export default async function MemberDetailPage({
 
   return (
     <main className="p-8">
-      <h1 className="text-2xl font-semibold text-stone-900">{member.user.name}</h1>
-      <p className="text-sm text-stone-500">
-        {member.user.email} · {member.user.phone} · joined {member.joinedAt.toISOString().slice(0, 10)}
-      </p>
+      <div className="flex items-center gap-4">
+        {member.photoUrl ? (
+          <img src={member.photoUrl} alt="" className="h-14 w-14 rounded-full object-cover" />
+        ) : (
+          <span className="flex h-14 w-14 items-center justify-center rounded-full bg-stone-200 text-lg text-stone-500">
+            {member.user.name.charAt(0).toUpperCase()}
+          </span>
+        )}
+        <div>
+          <h1 className="text-2xl font-semibold text-stone-900">{member.user.name}</h1>
+          <p className="text-sm text-stone-500">
+            {member.user.email} · {member.user.phone} · joined {member.joinedAt.toISOString().slice(0, 10)}
+          </p>
+        </div>
+      </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
@@ -68,7 +79,7 @@ export default async function MemberDetailPage({
                 {member.bookings.map((b) => (
                   <tr key={b.id} className="border-t border-stone-100">
                     <td className="py-2 text-stone-700">
-                      {b.session.classType?.name ?? "PT"} · {b.session.startsAt.toISOString().slice(0, 16).replace("T", " ")}
+                      {b.session.classType?.name ?? "Private class"} · {b.session.startsAt.toISOString().slice(0, 16).replace("T", " ")}
                     </td>
                     <td className="py-2 text-stone-500">{b.session.trainer.user.name}</td>
                     <td className="py-2">{b.status}</td>

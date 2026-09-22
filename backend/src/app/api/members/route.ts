@@ -1,11 +1,9 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
-import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { apiHandler, requireRole } from "@/lib/rbac";
 import { createMemberSchema } from "@/lib/validation";
-import { getNotificationService } from "@/lib/notifications";
 
 export const POST = apiHandler(async (req: Request) => {
   const session = await requireRole(["OWNER", "ADMIN"]);
@@ -15,18 +13,13 @@ export const POST = apiHandler(async (req: Request) => {
     ? await prisma.membershipPlan.findUnique({ where: { id: body.planId } })
     : null;
 
-  // No password typed at the front desk → generate one and text it, same
-  // pattern as staff invites (backend/src/app/api/staff/route.ts) — never
-  // fall back to a fixed default password.
-  const tempPassword = body.password ?? crypto.randomBytes(6).toString("base64url");
-
   const member = await prisma.$transaction(async (tx) => {
     const user = await tx.user.create({
       data: {
         name: body.name,
         email: body.email.toLowerCase(),
         phone: body.phone,
-        passwordHash: await bcrypt.hash(tempPassword, 10),
+        passwordHash: await bcrypt.hash(body.password, 10),
         role: "MEMBER",
       },
     });
@@ -49,13 +42,6 @@ export const POST = apiHandler(async (req: Request) => {
     });
     return member;
   });
-
-  if (!body.password) {
-    await getNotificationService().sendSms(
-      body.phone,
-      `Welcome to CoreStudio! Log in with ${body.email} and temporary password: ${tempPassword}`,
-    );
-  }
 
   return NextResponse.json({ member }, { status: 201 });
 });

@@ -4,7 +4,7 @@ import { authConfig } from "@/auth.config";
 
 const { auth } = NextAuth(authConfig);
 
-const STAFF_ROLES = ["OWNER", "ADMIN", "TRAINER"];
+const STAFF_ROLES = ["OWNER", "ADMIN", "ACCOUNTANT", "TRAINER"];
 
 export default auth((req) => {
   const { nextUrl } = req;

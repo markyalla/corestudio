@@ -47,3 +47,66 @@ export async function assertTrainerAvailable(
     throw new ApiError(409, `Trainer is marked unavailable on ${first}`);
   }
 }
+
+type Db = Prisma.TransactionClient | typeof prisma;
+
+/** Serialises concurrent private-class bookings for one trainer (mirrors
+ *  lockSession in booking.ts). */
+export async function lockTrainer(tx: Prisma.TransactionClient, trainerId: string) {
+  await tx.$queryRaw`SELECT id FROM "Trainer" WHERE id = ${trainerId} FOR UPDATE`;
+}
+
+export type TrainerSessionClash = {
+  startsAt: Date;
+  kind: "CLASS" | "PT";
+  className: string | null;
+};
+
+/** Returns the first SCHEDULED session assigned to the trainer whose time
+ *  intersects [startsAt, startsAt+durationMins), or null. */
+export async function findTrainerSessionClash(
+  db: Db,
+  trainerId: string,
+  startsAt: Date,
+  durationMins: number,
+  excludeSessionId?: string,
+): Promise<TrainerSessionClash | null> {
+  const end = new Date(startsAt.getTime() + durationMins * 60_000);
+  const rows = await db.session.findMany({
+    where: {
+      trainerId,
+      status: "SCHEDULED",
+      ...(excludeSessionId ? { id: { not: excludeSessionId } } : {}),
+      startsAt: {
+        gte: new Date(startsAt.getTime() - DAY),
+        lt: new Date(end.getTime() + DAY),
+      },
+    },
+    select: { startsAt: true, durationMins: true, kind: true, classType: { select: { name: true } } },
+    orderBy: { startsAt: "asc" },
+  });
+  for (const s of rows) {
+    const sEnd = new Date(s.startsAt.getTime() + s.durationMins * 60_000);
+    if (s.startsAt < end && startsAt < sEnd) {
+      return { startsAt: s.startsAt, kind: s.kind, className: s.classType?.name ?? null };
+    }
+  }
+  return null;
+}
+
+/** Throws a 409 if [startsAt, startsAt+durationMins) intersects any other
+ *  SCHEDULED session assigned to the trainer — used both when a member books a
+ *  private slot and when staff create/move a session onto that trainer. */
+export async function assertNoTrainerSessionOverlap(
+  db: Db,
+  trainerId: string,
+  startsAt: Date,
+  durationMins: number,
+  excludeSessionId?: string,
+) {
+  const clash = await findTrainerSessionClash(db, trainerId, startsAt, durationMins, excludeSessionId);
+  if (clash) {
+    const when = clash.startsAt.toISOString().slice(0, 16).replace("T", " ");
+    throw new ApiError(409, `Overlaps another session for this trainer at ${when}`);
+  }
+}

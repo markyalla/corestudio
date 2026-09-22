@@ -99,7 +99,7 @@ export default function PaymentDetailScreen() {
             </View>
             <View style={styles.row}>
               <Text style={styles.rowLabel}>Class</Text>
-              <Text style={styles.rowValue}>{payment.booking.session.classType?.name ?? "PT session"}</Text>
+              <Text style={styles.rowValue}>{payment.booking.session.classType?.name ?? "Private class session"}</Text>
             </View>
             <View style={styles.row}>
               <Text style={styles.rowLabel}>Trainer</Text>

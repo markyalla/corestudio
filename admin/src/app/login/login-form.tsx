@@ -9,6 +9,7 @@ export function LoginForm() {
   const params = useSearchParams();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const justReset = params.get("reset") === "1";
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -34,6 +35,11 @@ export function LoginForm() {
 
   return (
     <form onSubmit={onSubmit} className="space-y-4">
+      {justReset && (
+        <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+          Password updated — log in with your new password.
+        </p>
+      )}
       <div>
         <label htmlFor="email" className="mb-1 block text-sm font-medium text-stone-700">
           Email
@@ -69,9 +75,9 @@ export function LoginForm() {
         {busy ? "Logging in…" : "Log in"}
       </button>
       <p className="text-center text-xs text-stone-400">
-        <a href="/forgot" className="underline">Forgot password?</a>
+        <a href="/set-password" className="underline">First time? Set your password</a>
         {" · "}
-        <a href="/signup" className="underline">Sign up</a>
+        <a href="/forgot" className="underline">Forgot password?</a>
       </p>
     </form>
   );

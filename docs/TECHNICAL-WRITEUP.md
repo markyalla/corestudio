@@ -168,7 +168,7 @@ different reading is defensible:
 
 | Document | Contents |
 | --- | --- |
-| [README.md](../README.md) | Quick start, scripts, seeded logins |
+| [README.md](../README.md) | Quick start, scripts, deployment |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Layers, auth/RBAC, request flow, cron, PWA |
 | [DATA-MODEL.md](DATA-MODEL.md) | Every model, enum, constraint, and why |
 | [API.md](API.md) | Endpoint reference: auth, roles, bodies, errors |

@@ -16,7 +16,7 @@ function toCsv(rows: Record<string, unknown>[]): string {
 
 /** CSV export of any core table (admin only). ?table=bookings|payments|members|sessions|payouts */
 export const GET = apiHandler(async (req: Request) => {
-  await requireRole(["OWNER", "ADMIN"]);
+  await requireRole(["OWNER", "ADMIN", "ACCOUNTANT"]);
   const table = new URL(req.url).searchParams.get("table");
 
   let rows: Record<string, unknown>[];
@@ -32,7 +32,7 @@ export const GET = apiHandler(async (req: Request) => {
         })
       ).map((b) => ({
         member: b.member.user.name,
-        class: b.session.classType?.name ?? "PT",
+        class: b.session.classType?.name ?? "Private class",
         startsAt: b.session.startsAt.toISOString(),
         trainer: b.session.trainer.user.name,
         status: b.status,
@@ -83,7 +83,7 @@ export const GET = apiHandler(async (req: Request) => {
           orderBy: { startsAt: "desc" },
         })
       ).map((s) => ({
-        class: s.classType?.name ?? "PT",
+        class: s.classType?.name ?? "Private class",
         trainer: s.trainer.user.name,
         startsAt: s.startsAt.toISOString(),
         durationMins: s.durationMins,

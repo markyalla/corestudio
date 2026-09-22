@@ -13,7 +13,7 @@ const schema = z.object({
 
 /** Record a manual payment taken at the front desk. */
 export const POST = apiHandler(async (req: Request) => {
-  const session = await requireRole(["OWNER", "ADMIN"]);
+  const session = await requireRole(["OWNER", "ADMIN", "ACCOUNTANT"]);
   const body = schema.parse(await req.json());
 
   const payment = await prisma.$transaction(async (tx) => {

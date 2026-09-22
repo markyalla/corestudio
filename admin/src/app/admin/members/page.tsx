@@ -11,6 +11,7 @@ export const dynamic = "force-dynamic";
 export default async function MembersPage() {
   const session = await auth();
   if (session?.user?.role === "TRAINER") redirect("/admin/timetable");
+  if (session?.user?.role === "ACCOUNTANT") redirect("/admin/payroll");
 
   const [members, plans] = await Promise.all([
     prisma.member.findMany({
@@ -43,7 +44,14 @@ export default async function MembersPage() {
             {members.map((m) => (
               <tr key={m.id} className="border-b border-stone-100 hover:bg-stone-50">
                 <td className="px-4 py-2.5">
-                  <Link href={`/admin/members/${m.id}`} className="font-medium text-stone-800 underline-offset-2 hover:underline">
+                  <Link href={`/admin/members/${m.id}`} className="flex items-center gap-2 font-medium text-stone-800 underline-offset-2 hover:underline">
+                    {m.photoUrl ? (
+                      <img src={m.photoUrl} alt="" className="h-7 w-7 rounded-full object-cover" />
+                    ) : (
+                      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-stone-200 text-xs text-stone-500">
+                        {m.user.name.charAt(0).toUpperCase()}
+                      </span>
+                    )}
                     {m.user.name}
                   </Link>
                 </td>

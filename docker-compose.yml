@@ -18,6 +18,22 @@ services:
       timeout: 3s
       retries: 10
 
+  # Object storage for profile/trainer photos. Internal-only (no published
+  # port) — backend is the only reader/writer, proxying reads through
+  # /api/media/** (see backend/src/lib/storage.ts) so the bucket itself never
+  # needs to be public and nginx needs no new routes.
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-corestudio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env}
+    command: server /data
+    volumes:
+      - miniodata:/data
+    expose:
+      - "9000"
+
   # REST API + Prisma + all business logic. Owns the database.
   backend:
     build:
@@ -27,6 +43,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      minio:
+        condition: service_started
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-corestudio}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-corestudio}
       AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET in .env}
@@ -44,6 +62,11 @@ services:
       HUBTEL_CLIENT_SECRET: ${HUBTEL_CLIENT_SECRET}
       SMS_SENDER_ID: ${SMS_SENDER_ID:-CoreStudio}
       CRON_SECRET: ${CRON_SECRET:?set CRON_SECRET in .env}
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: "9000"
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-corestudio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: ${MINIO_BUCKET:-corestudio-media}
     expose:
       - "4000"
 
@@ -105,3 +128,4 @@ services:
 
 volumes:
   pgdata:
+  miniodata:

@@ -6,7 +6,7 @@ import { issueMobileToken } from "@/lib/mobile-auth";
 
 /** Mobile login: email+password → bearer JWT (no session cookie involved). */
 export const POST = apiHandler(async (req: Request) => {
-  const user = await verifyCredentials(await req.json());
+  const user = await verifyCredentials(await req.json(), "mobile");
   if (!user) throw new ApiError(401, "Invalid email or password");
 
   const member = await prisma.member.findFirst({ where: { userId: user.id } });
@@ -15,6 +15,7 @@ export const POST = apiHandler(async (req: Request) => {
     userId: user.id,
     role: user.role,
     memberId: member?.id ?? null,
+    tokenVersion: user.tokenVersion,
   });
 
   return NextResponse.json({

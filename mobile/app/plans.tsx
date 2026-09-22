@@ -4,6 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useFocusEffect } from "expo-router";
 import {
+  api,
   ApiError,
   getPlans,
   subscribeToPlan,
@@ -18,14 +19,19 @@ import { CheckoutModal } from "@/components/CheckoutModal";
 export default function PlansScreen() {
   const [plans, setPlans] = useState<PlanOption[]>([]);
   const [loading, setLoading] = useState(true);
+  const [hasLocation, setHasLocation] = useState<boolean | null>(null);
   const [subscribingId, setSubscribingId] = useState<string | null>(null);
   const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await getPlans();
-      setPlans(res.plans);
+      const [plansRes, profileRes] = await Promise.all([
+        getPlans(),
+        api<{ member: { location: { id: string } | null } }>("/api/app/profile"),
+      ]);
+      setPlans(plansRes.plans);
+      setHasLocation(!!profileRes.member.location);
     } finally {
       setLoading(false);
     }
@@ -106,6 +112,21 @@ export default function PlansScreen() {
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={colors.green} />}
       >
+        {hasLocation === false ? (
+          <View style={styles.emptyCard}>
+            <Ionicons name="location-outline" size={28} color={colors.warning} />
+            <Text style={styles.empty}>
+              Choose your studio location first so we can match you to the right plan and classes.
+            </Text>
+            <Pressable
+              style={({ pressed }) => [styles.button, pressed && styles.buttonPressed, { alignSelf: "stretch" }]}
+              onPress={() => router.replace("/(tabs)/profile")}
+            >
+              <Text style={styles.buttonText}>Go to Profile</Text>
+            </Pressable>
+          </View>
+        ) : (
+          <>
         <Text style={styles.subtitle}>
           Subscribe to a plan for monthly credits, or keep paying per class instead.
         </Text>
@@ -156,6 +177,8 @@ export default function PlansScreen() {
             <Ionicons name="ribbon-outline" size={28} color={colors.textMuted} />
             <Text style={styles.empty}>No plans available right now.</Text>
           </View>
+        )}
+          </>
         )}
       </ScrollView>
     </SafeAreaView>

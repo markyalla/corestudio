@@ -4,11 +4,15 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { apiHandler, requireMobileAuth } from "@/lib/rbac";
 import { audit } from "@/lib/audit";
+import { uploadDataUrlImage } from "@/lib/storage";
+import { issueMobileToken } from "@/lib/mobile-auth";
 
 const schema = z.object({
   name: z.string().min(1).optional(),
   currentPassword: z.string().optional(),
   newPassword: z.string().min(8).optional(),
+  preferredLocationId: z.string().nullable().optional(),
+  photoDataUrl: z.string().optional(),
 });
 
 /** Member profile + plan + wallet + recent payment history. */
@@ -19,6 +23,7 @@ export const GET = apiHandler(async (req: Request) => {
     include: {
       user: true,
       plan: { include: { perks: { where: { active: true } } } },
+      preferredLocation: true,
       payments: { orderBy: { createdAt: "desc" }, take: 15 },
     },
   });
@@ -47,6 +52,10 @@ export const GET = apiHandler(async (req: Request) => {
       walletGHS: member.walletGHS,
       cycleRenewsAt: member.cycleRenewsAt,
       joinedAt: member.joinedAt,
+      photoUrl: member.photoUrl,
+      location: member.preferredLocation
+        ? { id: member.preferredLocation.id, name: member.preferredLocation.name }
+        : null,
     },
     user: { name: member.user.name, email: member.user.email, phone: member.user.phone },
     plan: member.plan
@@ -57,6 +66,7 @@ export const GET = apiHandler(async (req: Request) => {
           classesPerCycle: member.plan.classesPerCycle,
           bonusCredits: member.plan.bonusCredits,
           cycleDays: member.plan.cycleDays,
+          description: member.plan.description,
           perks: member.plan.perks.map((perk) => perk.name),
         }
       : null,
@@ -90,23 +100,75 @@ export const PATCH = apiHandler(async (req: Request) => {
   const auth = await requireMobileAuth(req, "ANY");
   const body = schema.parse(await req.json());
 
-  const data: { name?: string; passwordHash?: string } = {};
+  const data: { name?: string; passwordHash?: string; tokenVersion?: { increment: number } } = {};
   if (body.name) data.name = body.name;
+
+  // Set only when the password changes — bumping tokenVersion invalidates
+  // every mobile bearer token for this user, including the one on this very
+  // request, so we issue a replacement below and hand it back to the caller.
+  let newToken: string | undefined;
 
   if (body.newPassword) {
     const user = await prisma.user.findUniqueOrThrow({ where: { id: auth.user.id } });
     const ok = await bcrypt.compare(body.currentPassword ?? "", user.passwordHash);
     if (!ok) return NextResponse.json({ error: "Current password is wrong" }, { status: 400 });
     data.passwordHash = await bcrypt.hash(body.newPassword, 10);
+    data.tokenVersion = { increment: 1 };
   }
 
-  await prisma.user.update({ where: { id: auth.user.id }, data });
-  await audit(prisma, {
-    userId: auth.user.id,
-    action: "user.profile_update",
-    entity: "User",
-    entityId: auth.user.id,
-    payload: { changed: Object.keys(data) },
-  });
-  return NextResponse.json({ ok: true });
+  if (Object.keys(data).length > 0) {
+    const updated = await prisma.user.update({ where: { id: auth.user.id }, data });
+    if (data.tokenVersion) {
+      newToken = await issueMobileToken({
+        userId: updated.id,
+        role: updated.role,
+        memberId: auth.user.memberId,
+        tokenVersion: updated.tokenVersion,
+      });
+    }
+    await audit(prisma, {
+      userId: auth.user.id,
+      action: "user.profile_update",
+      entity: "User",
+      entityId: auth.user.id,
+      payload: { changed: Object.keys(data) },
+    });
+  }
+
+  if ("preferredLocationId" in body) {
+    const locationId = body.preferredLocationId ?? null;
+    if (locationId) {
+      const loc = await prisma.location.findUnique({ where: { id: locationId } });
+      if (!loc || !loc.active) {
+        return NextResponse.json({ error: "That studio location isn't available" }, { status: 400 });
+      }
+    }
+    const member = await prisma.member.findFirst({ where: { userId: auth.user.id } });
+    if (!member) return NextResponse.json({ error: "No member profile for this account" }, { status: 404 });
+    await prisma.member.update({ where: { id: member.id }, data: { preferredLocationId: locationId } });
+    await audit(prisma, {
+      userId: auth.user.id,
+      action: "member.set_location",
+      entity: "Member",
+      entityId: member.id,
+      payload: { preferredLocationId: locationId },
+    });
+  }
+
+  if (body.photoDataUrl) {
+    const member = await prisma.member.findFirst({ where: { userId: auth.user.id } });
+    if (!member) return NextResponse.json({ error: "No member profile for this account" }, { status: 404 });
+    const photoUrl = await uploadDataUrlImage(body.photoDataUrl, `members/${member.id}`);
+    await prisma.member.update({ where: { id: member.id }, data: { photoUrl } });
+    await audit(prisma, {
+      userId: auth.user.id,
+      action: "member.set_photo",
+      entity: "Member",
+      entityId: member.id,
+      payload: {},
+    });
+    return NextResponse.json({ ok: true, photoUrl, ...(newToken ? { token: newToken } : {}) });
+  }
+
+  return NextResponse.json({ ok: true, ...(newToken ? { token: newToken } : {}) });
 });

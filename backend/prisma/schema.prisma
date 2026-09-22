@@ -14,8 +14,16 @@ datasource db {
 enum Role {
   OWNER
   ADMIN
+  ACCOUNTANT
   TRAINER
   MEMBER
+}
+
+enum StaffPosition {
+  SECURITY
+  SECRETARY
+  CLEANER
+  OTHER
 }
 
 enum MemberStatus {
@@ -50,6 +58,7 @@ enum PaymentMethod {
   CASH
   COMP
   WALLET // booking fully covered by Member.walletGHS
+  PACKAGE // booking drawn from a MemberPackage's remaining sessions
 }
 
 enum PaymentStatus {
@@ -63,15 +72,37 @@ enum PayoutStatus {
   PAID
 }
 
+enum AnnouncementKind {
+  ANNOUNCEMENT
+  PROMOTION
+}
+
+enum TrainerRequestType {
+  CANCEL_SESSION
+  UNAVAILABLE
+}
+
+enum TrainerRequestStatus {
+  PENDING
+  APPROVED
+  DISMISSED
+}
+
 model Studio {
   id                 String   @id @default(cuid())
   name               String
   currency           String   @default("GHS")
   momoNumber         String?
+  contactEmail       String   @default("") // shown to members as the general help-desk email
+  whatsapp           String   @default("") // shown to members as the general help-desk WhatsApp number
   advanceBookingDays Int      @default(14)
   cancelCutoffHours  Int      @default(12)
   bookingCutoffMinutes Int    @default(45)
   timezone           String   @default("Africa/Accra")
+  // Default staff social-security withholding rate (whole percent), applied
+  // to StaffMember.baseSalaryGHS when the accountant runs payroll — see
+  // PayrollPayment.socialSecurityPercent, which snapshots this at pay time.
+  socialSecurityPercent Int   @default(18)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 }
@@ -84,6 +115,11 @@ model User {
   phoneVerifiedAt DateTime?
   passwordHash String
   role         Role      @default(MEMBER)
+  // Embedded in every mobile bearer JWT and checked on each request —
+  // bumping this instantly invalidates every previously-issued mobile
+  // token for this user (password change, "log out everywhere"). Not
+  // consulted by the web/admin NextAuth session, which is cookie-based.
+  tokenVersion Int       @default(0)
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
@@ -125,16 +161,21 @@ model PerkItem {
   name   String
   active Boolean @default(true)
 
-  plans MembershipPlan[] @relation("PlanPerks")
+  plans    MembershipPlan[] @relation("PlanPerks")
+  packages Package[]        @relation("PackagePerks")
 }
 
 model Member {
   id            String       @id @default(cuid())
   userId        String       @unique
   planId        String?
+  // The studio location this member attends. Must be set before they can
+  // subscribe to a plan; also filters the sessions they see in the app.
+  preferredLocationId String?
   status        MemberStatus @default(ACTIVE)
   creditsLeft   Int          @default(0)
   walletGHS     Int          @default(0) // pesewas
+  photoUrl      String? // set via PATCH /api/app/profile, served from /api/media/**
   cycleRenewsAt DateTime?
   // Renewal reminder dedupe (rule 7)
   renewalReminderAt DateTime?
@@ -142,8 +183,10 @@ model Member {
 
   user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   plan     MembershipPlan? @relation(fields: [planId], references: [id])
+  preferredLocation Location? @relation("MemberPreferredLocation", fields: [preferredLocationId], references: [id])
   bookings Booking[]
   payments Payment[]
+  memberPackages MemberPackage[]
 }
 
 model Trainer {
@@ -151,6 +194,9 @@ model Trainer {
   userId            String  @unique
   specialty         String  @default("")
   commissionPercent Int     @default(40)
+  // Commission rate applied to private (one-on-one) class bookings — usually
+  // higher than commissionPercent (which covers group classes).
+  ptCommissionPercent Int   @default(60)
   ptRateGHS         Int     @default(0) // pesewas
   calendarColor     String  @default("#0ea5e9")
   bio               String  @default("")
@@ -161,6 +207,31 @@ model Trainer {
   payouts  Payout[]
   recurrenceRules RecurrenceRule[]
   unavailability  TrainerUnavailability[]
+  ptWindows       PtWindow[]
+  requests        TrainerRequest[]
+  defaultForClassTypes ClassType[]
+}
+
+// A trainer's recurring weekly availability window for private (one-on-one)
+// classes. Members pick a day matching one of these and their own start time
+// within [startTime, endTime]; a PT Session is created on booking.
+model PtWindow {
+  id           String   @id @default(cuid())
+  trainerId    String
+  title        String   @default("") // optional label; UI falls back to specialty / "Private class"
+  dayOfWeek    Int // 0 = Sunday ... 6 = Saturday, in studio timezone
+  startTime    String // "HH:mm" in studio timezone
+  endTime      String // "HH:mm" in studio timezone
+  locationId   String
+  durationMins Int      @default(60) // length of one private session
+  priceGHS     Int // pesewas; seeded from trainer.ptRateGHS on create
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  trainer  Trainer  @relation(fields: [trainerId], references: [id], onDelete: Cascade)
+  location Location @relation(fields: [locationId], references: [id])
+
+  @@index([trainerId, dayOfWeek])
 }
 
 model TrainerUnavailability {
@@ -177,15 +248,43 @@ model TrainerUnavailability {
   @@index([trainerId, date])
 }
 
+// A trainer flagging a scheduling problem to staff — either "please cancel
+// this class" (sessionId set) or a general heads-up that they won't be
+// available at a time (sessionId null). Trainers no longer edit their own
+// calendar directly (see TrainerUnavailability/PtWindow above, now
+// staff-only writes) — this is how they surface the need instead. Staff
+// review it and, if it suits the studio, cancel the session themselves via
+// cancelSession(), which notifies affected members.
+model TrainerRequest {
+  id               String               @id @default(cuid())
+  trainerId        String
+  sessionId        String?
+  type             TrainerRequestType
+  message          String
+  status           TrainerRequestStatus @default(PENDING)
+  createdAt        DateTime             @default(now())
+  resolvedAt       DateTime?
+  resolvedByUserId String?
+
+  trainer Trainer  @relation(fields: [trainerId], references: [id], onDelete: Cascade)
+  session Session? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+
+  @@index([trainerId])
+  @@index([status])
+}
+
 model Location {
   id        String   @id @default(cuid())
   name      String
   address   String   @default("")
+  phone     String   @default("") // this location's front-desk number, shown to members for help
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
 
-  sessions        Session[]
-  recurrenceRules RecurrenceRule[]
+  sessions          Session[]
+  recurrenceRules   RecurrenceRule[]
+  preferringMembers Member[]         @relation("MemberPreferredLocation")
+  ptWindows         PtWindow[]
 }
 
 model ClassType {
@@ -196,9 +295,57 @@ model ClassType {
   defaultCapacity Int     @default(8)
   description     String  @default("")
   active          Boolean @default(true)
+  // Set on single-trainer private services (e.g. "Pilates (Maryam)") so the
+  // admin "New session" modal can auto-pick the trainer once the service is
+  // chosen — null for group class types and multi-trainer services
+  // (Physiotherapy, Thai Massage) where the admin still picks one.
+  defaultTrainerId String?
 
   sessions        Session[]
   recurrenceRules RecurrenceRule[]
+  packages        Package[]
+  defaultTrainer  Trainer?         @relation(fields: [defaultTrainerId], references: [id])
+}
+
+// A one-time, non-renewing bundle of sessions for one specific ClassType —
+// e.g. "Thai Massage 90min — Buy 7 Get 1" (8 sessions, expires in 90 days).
+// Unlike MembershipPlan (recurring, auto-renews, freezes the member if
+// unpaid), a Package is bought once and just runs out or expires, whichever
+// comes first. Booking against it only pays for sessions of its classType —
+// this is also how a trainer-specific plan like "Pilates (Maryam)" enforces
+// that its sessions can only be spent with Maryam: the ClassType itself is
+// named/scoped to that trainer (see ClassType).
+model Package {
+  id            String  @id @default(cuid())
+  name          String
+  classTypeId   String
+  sessionsGranted Int // total sessions, including any free ones
+  priceGHS      Int // pesewas
+  validDays     Int // member's copy expires this many days after purchase
+  active        Boolean @default(true)
+
+  classType      ClassType       @relation(fields: [classTypeId], references: [id])
+  memberPackages MemberPackage[]
+  payments       Payment[]
+  perks          PerkItem[]      @relation("PackagePerks")
+}
+
+// A member's purchased copy of a Package — tracks their own remaining
+// sessions and expiry independently of the Package definition (which staff
+// can keep editing/pricing for future buyers).
+model MemberPackage {
+  id           String   @id @default(cuid())
+  memberId     String
+  packageId    String
+  sessionsLeft Int
+  purchasedAt  DateTime @default(now())
+  expiresAt    DateTime
+
+  member  Member  @relation(fields: [memberId], references: [id])
+  package Package @relation(fields: [packageId], references: [id])
+  bookings Booking[]
+
+  @@index([memberId])
 }
 
 model RecurrenceRule {
@@ -210,6 +357,10 @@ model RecurrenceRule {
   locationId  String?
   capacity    Int?
   active      Boolean @default(true)
+  // Month window the rule applies to. The monthly timetable scopes each rule
+  // to one calendar month; null/null means it recurs indefinitely.
+  validFrom   DateTime? // UTC midnight, inclusive
+  validUntil  DateTime? // UTC midnight, exclusive (day after the last)
 
   classType ClassType @relation(fields: [classTypeId], references: [id])
   trainer   Trainer   @relation(fields: [trainerId], references: [id])
@@ -235,6 +386,7 @@ model Session {
   location       Location?       @relation(fields: [locationId], references: [id])
   recurrenceRule RecurrenceRule? @relation(fields: [recurrenceRuleId], references: [id])
   bookings       Booking[]
+  trainerRequests TrainerRequest[]
 
   @@index([startsAt])
   @@index([trainerId, startsAt])
@@ -250,6 +402,14 @@ model Booking {
   paidWith    PaymentMethod?
   amountGHS   Int           @default(0) // pesewas
   paystackRef String?       @unique
+  // Set when paidWith is PACKAGE — which MemberPackage this booking drew a
+  // session from, so cancelling can credit the session back.
+  memberPackageId String?
+  // Set only when the whole session was cancelled by the studio (see
+  // cancelSession()) — distinguishes that from the member's own voluntary
+  // cancel, so the app can show a softer "we'll help you reschedule" note
+  // instead of treating it as a plain self-cancellation.
+  cancelReason String?
   // WAITLIST promotion: when promoted with a payment window, the deadline
   promotionExpiresAt DateTime?
   // Reminder SMS dedupe (rule 7)
@@ -260,6 +420,7 @@ model Booking {
 
   session    Session     @relation(fields: [sessionId], references: [id])
   member     Member      @relation(fields: [memberId], references: [id])
+  memberPackage MemberPackage? @relation(fields: [memberPackageId], references: [id])
   payoutLine PayoutLine?
 
   @@index([sessionId, status])
@@ -278,10 +439,14 @@ model Payment {
   // cash — lets staff confirming it in the admin portal know which plan to
   // activate, without parsing the description string.
   planId      String?
+  // Same idea as planId, for a cash Package purchase — tells staff
+  // confirming the cash payment which Package to grant.
+  packageId   String?
   createdAt   DateTime      @default(now())
 
-  member Member          @relation(fields: [memberId], references: [id])
-  plan   MembershipPlan? @relation(fields: [planId], references: [id])
+  member  Member          @relation(fields: [memberId], references: [id])
+  plan    MembershipPlan? @relation(fields: [planId], references: [id])
+  pkg     Package?        @relation(fields: [packageId], references: [id])
 
   @@index([memberId, status])
 }
@@ -291,9 +456,13 @@ model Payout {
   trainerId         String
   periodStart       DateTime
   periodEnd         DateTime
-  grossGHS          Int // pesewas
-  commissionPercent Int
-  amountGHS         Int // pesewas
+  grossGHS          Int // pesewas — total gross across all included bookings (group + PT)
+  commissionPercent Int // group-class commission rate at payout time
+  // Private-class subset of grossGHS and its rate, split out so a statement
+  // stays accurate after a rate change. Group gross = grossGHS − ptGrossGHS.
+  ptGrossGHS          Int          @default(0)
+  ptCommissionPercent Int          @default(0)
+  amountGHS         Int // pesewas — (grossGHS−ptGrossGHS)×commissionPercent + ptGrossGHS×ptCommissionPercent
   status            PayoutStatus @default(PENDING)
   paidAt            DateTime?
   reference         String? // manual MoMo transfer ID
@@ -312,6 +481,78 @@ model PayoutLine {
   booking Booking @relation(fields: [bookingId], references: [id])
 }
 
+// Non-trainer employee (security, secretary, cleaner, other) managed by the
+// accountant for payroll purposes. Unlike Trainer, this carries no User/login
+// — these staff don't access the portal, they're just paid through it.
+model StaffMember {
+  id              String        @id @default(cuid())
+  name            String
+  phone           String        @default("")
+  position        StaffPosition @default(OTHER)
+  // Free-text label shown alongside `position`, e.g. "Handyman" — the
+  // display name when position = OTHER.
+  positionTitle   String        @default("")
+  baseSalaryGHS   Int // pesewas, monthly
+  active          Boolean       @default(true)
+  createdByUserId String?
+  createdAt       DateTime      @default(now())
+
+  payrollPayments PayrollPayment[]
+}
+
+// One month's salary run for a StaffMember. baseSalaryGHS/socialSecurityPercent
+// are snapshotted at pay time so a later rate change doesn't rewrite history —
+// same idea as Payout.commissionPercent.
+model PayrollPayment {
+  id                    String       @id @default(cuid())
+  staffMemberId         String
+  periodStart           DateTime
+  periodEnd             DateTime
+  baseSalaryGHS         Int // pesewas
+  socialSecurityPercent Int
+  socialSecurityGHS     Int // pesewas, withheld from baseSalaryGHS
+  netGHS                Int // pesewas — baseSalaryGHS − socialSecurityGHS, paid to the staff member
+  status                PayoutStatus @default(PENDING)
+  reference             String? // manual MoMo transfer ID
+  paidAt                DateTime?
+  createdAt             DateTime     @default(now())
+
+  staffMember StaffMember @relation(fields: [staffMemberId], references: [id])
+
+  @@unique([staffMemberId, periodStart, periodEnd])
+  @@index([staffMemberId])
+}
+
+// Log of a social-security remittance to SSNIT covering a period, across all
+// staff — a record-keeping entry (amount computed by the accountant), not
+// line-item linked to individual PayrollPayments.
+model SocialSecurityRemittance {
+  id          String       @id @default(cuid())
+  periodStart DateTime
+  periodEnd   DateTime
+  amountGHS   Int // pesewas
+  status      PayoutStatus @default(PENDING)
+  reference   String?
+  paidAt      DateTime?
+  createdAt   DateTime     @default(now())
+}
+
+// Log of a tax payment to GRA (VAT, income tax, withholding tax, etc.) —
+// `type` is free text since applicable tax types vary. Record-keeping only,
+// same as SocialSecurityRemittance.
+model TaxPayment {
+  id              String       @id @default(cuid())
+  type            String
+  periodStart     DateTime
+  periodEnd       DateTime
+  amountGHS       Int // pesewas
+  status          PayoutStatus @default(PENDING)
+  reference       String?
+  paidAt          DateTime?
+  createdByUserId String?
+  createdAt       DateTime     @default(now())
+}
+
 model AuditLog {
   id        String   @id @default(cuid())
   userId    String?
@@ -325,4 +566,39 @@ model AuditLog {
 
   @@index([entity, entityId])
   @@index([createdAt])
+}
+
+// Short notices shown to members on the app Home screen. Staff post these
+// from Admin → Settings. `endsAt` (optional) auto-hides the notice after
+// that moment; `active` is the manual on/off switch.
+model Announcement {
+  id              String           @id @default(cuid())
+  kind            AnnouncementKind @default(ANNOUNCEMENT)
+  title           String
+  body            String           @default("")
+  // Optional promo image, staff-uploaded from Admin → Settings. Stored as a
+  // data: URL (base64) directly in the row — no object storage/CDN set up
+  // for this app yet, and these are occasional small promo images, not a
+  // media library, so keeping it inline avoids standing up new infra.
+  imageUrl        String?
+  active          Boolean          @default(true)
+  endsAt          DateTime?
+  createdByUserId String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([active])
+}
+
+// Pool of short motivational lines. The app Home screen shows one per calendar
+// day, rotating deterministically through the active pool (no per-day row, no
+// deletion). Staff curate the pool from Admin → Settings.
+model MotivationMessage {
+  id              String   @id @default(cuid())
+  text            String
+  active          Boolean  @default(true)
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+
+  @@index([active])
 }

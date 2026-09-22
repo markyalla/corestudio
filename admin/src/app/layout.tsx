@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "CoreStudio Pilates",
-  description: "Studio management and class booking for CoreStudio Pilates, Accra.",
+  title: "P4Studio Pilates",
+  description: "Studio management and class booking for P4Studio Pilates, Accra.",
 };
 
 export const viewport: Viewport = {

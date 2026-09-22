@@ -18,19 +18,10 @@ const postSchema = z
 
 const deleteSchema = z.object({ dates: z.array(z.string()).min(1) });
 
-async function assertOwnTrainerOrStaff(trainerId: string) {
-  const session = await requireRole(["OWNER", "ADMIN", "TRAINER"]);
-  if (session.user.role === "TRAINER") {
-    const trainer = await prisma.trainer.findUnique({ where: { id: trainerId } });
-    if (!trainer || trainer.userId !== session.user.id) throw new ApiError(403, "Forbidden");
-  }
-  return session;
-}
-
 export const GET = apiHandler(
   async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
     const { id } = await ctx.params;
-    await assertOwnTrainerOrStaff(id);
+    await requireRole(["OWNER", "ADMIN"]);
 
     const { searchParams } = new URL(req.url);
     const from = searchParams.get("from");
@@ -51,7 +42,7 @@ export const GET = apiHandler(
 export const POST = apiHandler(
   async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
     const { id } = await ctx.params;
-    const session = await assertOwnTrainerOrStaff(id);
+    const session = await requireRole(["OWNER", "ADMIN"]);
     const body = postSchema.parse(await req.json());
 
     const now = new Date();
@@ -96,7 +87,7 @@ export const POST = apiHandler(
 export const DELETE = apiHandler(
   async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
     const { id } = await ctx.params;
-    const session = await assertOwnTrainerOrStaff(id);
+    const session = await requireRole(["OWNER", "ADMIN"]);
     const { dates } = deleteSchema.parse(await req.json());
 
     const res = await prisma.trainerUnavailability.deleteMany({

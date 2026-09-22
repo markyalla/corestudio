@@ -4,7 +4,6 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { apiHandler } from "@/lib/rbac";
-import { sendOtp } from "@/lib/otp";
 
 const schema = z.object({
   name: z.string().min(1).max(200),
@@ -16,6 +15,12 @@ const schema = z.object({
 export const POST = apiHandler(async (req: Request) => {
   const body = schema.parse(await req.json());
   const email = body.email.toLowerCase();
+
+  // Members can only sign up once the studio has been set up (owner created).
+  const studio = await prisma.studio.findFirst();
+  if (!studio) {
+    return NextResponse.json({ error: "This studio isn't taking sign-ups yet" }, { status: 503 });
+  }
 
   const clash = await prisma.user.findFirst({
     where: { OR: [{ email }, { phone: body.phone }] },
@@ -47,6 +52,5 @@ export const POST = apiHandler(async (req: Request) => {
     });
   });
 
-  await sendOtp(body.phone, "VERIFY_PHONE");
-  return NextResponse.json({ ok: true, next: "VERIFY_PHONE" }, { status: 201 });
+  return NextResponse.json({ ok: true }, { status: 201 });
 });

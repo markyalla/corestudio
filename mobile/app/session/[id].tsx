@@ -4,7 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router, useLocalSearchParams } from "expo-router";
-import { api, ApiError, verifyPayment } from "@/lib/api";
+import { api, ApiError, bookSessionWithCash, mediaUrl, verifyPayment } from "@/lib/api";
 import { formatGHS } from "@/lib/money";
 import { colors, radius, shadow } from "@/lib/theme";
 import { CapacityRing } from "@/components/CapacityRing";
@@ -18,7 +18,7 @@ interface SessionDetail {
   taken: number;
   priceGHS: number;
   classType: { id: string; name: string; description: string } | null;
-  trainer: { id: string; name: string; specialty: string; bio: string; photoUrl: string | null };
+  trainer: { id: string; name: string; specialty: string; bio: string; photoUrl: string | null; calendarColor: string };
   location: { id: string; name: string; address: string } | null;
   myStatus: string | null;
   cutoffMinutes?: number;
@@ -48,7 +48,7 @@ export default function SessionDetailScreen() {
   const booked = session.myStatus === "BOOKED" || session.myStatus === "ATTENDED";
   const waitlisted = session.myStatus === "WAITLIST";
   const mine = booked || waitlisted;
-  const className = session.classType?.name ?? "PT session";
+  const className = session.classType?.name ?? "Private class session";
   const cutoffMinutes = session.cutoffMinutes ?? 45;
   const closed = !mine && +new Date(session.startsAt) - Date.now() < cutoffMinutes * 60_000;
   const disabled = mine || closed;
@@ -74,6 +74,31 @@ export default function SessionDetailScreen() {
     } finally {
       setBooking(false);
     }
+  }
+
+  function onPayCash() {
+    Alert.alert(
+      "Pay with cash",
+      `Book ${className} now and pay ${formatGHS(session!.priceGHS)} at the studio. Staff confirm it there and your spot is held.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Confirm",
+          onPress: async () => {
+            setBooking(true);
+            try {
+              await bookSessionWithCash(session!.id);
+              Alert.alert("Booked", "Show up and pay in person — staff will confirm it.");
+              router.back();
+            } catch (e) {
+              Alert.alert("Couldn't book", e instanceof ApiError ? e.message : "Try again");
+            } finally {
+              setBooking(false);
+            }
+          },
+        },
+      ],
+    );
   }
 
   async function onCheckoutClose(reference: string | null) {
@@ -118,14 +143,17 @@ export default function SessionDetailScreen() {
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.trainerRow}>
           {session.trainer.photoUrl ? (
-            <Image source={{ uri: session.trainer.photoUrl }} style={styles.avatarImage} />
+            <Image source={{ uri: mediaUrl(session.trainer.photoUrl) }} style={styles.avatarImage} />
           ) : (
-            <View style={styles.avatar}>
+            <View style={[styles.avatar, { backgroundColor: session.trainer.calendarColor }]}>
               <Text style={styles.avatarInitial}>{session.trainer.name.charAt(0).toUpperCase()}</Text>
             </View>
           )}
           <View style={{ flex: 1 }}>
-            <Text style={styles.trainerName}>{session.trainer.name}</Text>
+            <View style={styles.trainerNameRow}>
+              <View style={[styles.trainerDot, { backgroundColor: session.trainer.calendarColor }]} />
+              <Text style={styles.trainerName}>{session.trainer.name}</Text>
+            </View>
             {!!session.trainer.specialty && (
               <Text style={styles.trainerSpecialty}>{session.trainer.specialty}</Text>
             )}
@@ -148,7 +176,13 @@ export default function SessionDetailScreen() {
           <View style={styles.metaRow}>
             <Ionicons name="time-outline" size={18} color={colors.textMuted} />
             <Text style={styles.metaText}>
-              {new Date(session.startsAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })} ·{" "}
+              {new Date(session.startsAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
+              {" – "}
+              {new Date(new Date(session.startsAt).getTime() + session.durationMins * 60_000).toLocaleTimeString(
+                undefined,
+                { hour: "numeric", minute: "2-digit" },
+              )}
+              {" · "}
               {session.durationMins} min
             </Text>
           </View>
@@ -220,6 +254,11 @@ export default function SessionDetailScreen() {
             </Text>
           )}
         </Pressable>
+        {!disabled && !full && (
+          <Pressable style={styles.cashButton} onPress={onPayCash} disabled={booking}>
+            <Text style={styles.cashButtonText}>Pay with cash at the studio</Text>
+          </Pressable>
+        )}
       </View>
     </SafeAreaView>
   );
@@ -254,6 +293,8 @@ const styles = StyleSheet.create({
   },
   avatarImage: { width: 56, height: 56, borderRadius: radius.pill, backgroundColor: colors.card },
   avatarInitial: { color: colors.white, fontSize: 22, fontWeight: "700" },
+  trainerNameRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  trainerDot: { width: 8, height: 8, borderRadius: 4 },
   trainerName: { fontSize: 16, fontWeight: "700", color: colors.text },
   trainerSpecialty: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
   className: { fontSize: 26, fontWeight: "700", color: colors.text, marginBottom: 16 },
@@ -264,8 +305,8 @@ const styles = StyleSheet.create({
     gap: 12,
     marginBottom: 16,
   },
-  metaRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  metaText: { fontSize: 14, color: colors.text },
+  metaRow: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
+  metaText: { fontSize: 14, color: colors.text, flex: 1, flexWrap: "wrap" },
   descCard: { marginBottom: 16, gap: 10 },
   descText: { fontSize: 14, color: colors.textMuted, lineHeight: 20 },
   bioText: { fontStyle: "italic" },
@@ -295,5 +336,7 @@ const styles = StyleSheet.create({
   buttonDisabled: { backgroundColor: colors.greenTint },
   buttonText: { color: colors.white, fontSize: 16, fontWeight: "700" },
   buttonTextDisabled: { color: colors.greenDark },
+  cashButton: { alignItems: "center", paddingVertical: 12, marginTop: 4 },
+  cashButtonText: { color: colors.textMuted, fontWeight: "600", fontSize: 13 },
   empty: { fontSize: 14, color: colors.textMuted, textAlign: "center", marginTop: 40 },
 });

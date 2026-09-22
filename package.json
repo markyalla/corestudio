@@ -11,7 +11,6 @@
     "build": "npm run build --workspace=backend && npm run build --workspace=admin",
     "lint": "npm run lint --workspace=backend && npm run lint --workspace=admin",
     "db:migrate": "npm run db:migrate --workspace=backend",
-    "db:seed": "npm run db:seed --workspace=backend",
     "db:studio": "npm run db:studio --workspace=backend",
     "test": "npm run test --workspace=backend"
   },

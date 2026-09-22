@@ -18,6 +18,9 @@ export const POST = apiHandler(
       include: { user: true },
     });
     if (!member) throw new ApiError(404, "No member profile for this account");
+    if (!member.preferredLocationId) {
+      throw new ApiError(400, "Choose your studio location before subscribing to a plan");
+    }
 
     const plan = await prisma.membershipPlan.findUnique({ where: { id } });
     if (!plan || !plan.active) throw new ApiError(404, "Plan not found");

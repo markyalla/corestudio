@@ -4,17 +4,27 @@ import { getNotificationService } from "./notifications";
 import { formatGHS } from "./money";
 
 const DAY = 24 * 60 * 60 * 1000;
+// How far ahead sessions are pre-generated from recurrence rules. Kept a bit
+// wider than the max studio advanceBookingDays (90) so the whole bookable
+// window is always materialised — members can plan 2-3 months out.
+const GENERATE_DAYS = 100;
 
-/** Generates sessions 4 weeks ahead from active weekly recurrence rules.
- *  The unique (recurrenceRuleId, startsAt) constraint makes this idempotent. */
-export async function generateSessions(): Promise<number> {
-  const rules = await prisma.recurrenceRule.findMany({
-    where: { active: true },
-    include: { classType: true },
-  });
+/** Generates sessions GENERATE_DAYS ahead from active weekly recurrence rules.
+ *  The unique (recurrenceRuleId, startsAt) constraint makes this idempotent.
+ *  `notBefore` (optional) skips any slot earlier than that instant — used by
+ *  the schedule importer to start a fresh timetable on a specific date. */
+export async function generateSessions(notBefore?: Date): Promise<number> {
   const today = new Date();
   today.setUTCHours(0, 0, 0, 0);
-  const windowEnd = new Date(today.getTime() + 28 * DAY);
+  const rules = await prisma.recurrenceRule.findMany({
+    where: {
+      active: true,
+      // Skip rules whose month window has fully passed.
+      OR: [{ validUntil: null }, { validUntil: { gt: today } }],
+    },
+    include: { classType: true },
+  });
+  const windowEnd = new Date(today.getTime() + GENERATE_DAYS * DAY);
 
   const unavailable = await prisma.trainerUnavailability.findMany({
     where: { trainerId: { in: rules.map((r) => r.trainerId) }, date: { gte: today, lte: windowEnd } },
@@ -25,22 +35,39 @@ export async function generateSessions(): Promise<number> {
   let created = 0;
   for (const rule of rules) {
     const [h, m] = rule.time.split(":").map(Number);
-    for (let day = 0; day <= 28; day++) {
+    for (let day = 0; day <= GENERATE_DAYS; day++) {
       const date = new Date(today.getTime() + day * DAY);
       if (date.getUTCDay() !== rule.dayOfWeek) continue;
       const startsAt = new Date(date);
       startsAt.setUTCHours(h, m, 0, 0);
       if (startsAt <= new Date()) continue;
+      if (notBefore && startsAt < notBefore) continue;
+      if (rule.validFrom && startsAt < rule.validFrom) continue;
+      if (rule.validUntil && startsAt >= rule.validUntil) continue;
 
       if (blocked.has(blockedKey(rule.trainerId, date))) {
-        await prisma.auditLog.create({
-          data: {
-            action: "session.skipped_unavailable_trainer",
+        // The rolling lookahead re-scans the same future blocked date on every
+        // 5-minute cron run until it passes — without this check we'd write
+        // a fresh audit row every single run for as long as it stays blocked.
+        const dateStr = date.toISOString().slice(0, 10);
+        const alreadyLogged = await prisma.auditLog.findFirst({
+          where: {
             entity: "RecurrenceRule",
             entityId: rule.id,
-            payload: { trainerId: rule.trainerId, date: date.toISOString().slice(0, 10) },
+            action: "session.skipped_unavailable_trainer",
+            payload: { path: ["date"], equals: dateStr },
           },
         });
+        if (!alreadyLogged) {
+          await prisma.auditLog.create({
+            data: {
+              action: "session.skipped_unavailable_trainer",
+              entity: "RecurrenceRule",
+              entityId: rule.id,
+              payload: { trainerId: rule.trainerId, date: dateStr },
+            },
+          });
+        }
         continue;
       }
 
@@ -69,6 +96,14 @@ export async function generateSessions(): Promise<number> {
 /** Rule 4: sessions past their end time complete; un-checked bookings → NO_SHOW. */
 export async function completeSessions(): Promise<{ completed: number; noShows: number }> {
   const now = new Date();
+
+  // Sweep abandoned private-class slots: a PT session is created up front when
+  // a member starts Paystack checkout; if they never pay, it sits with zero
+  // bookings. Once it's in the past, drop it so it doesn't clutter reports.
+  await prisma.session.deleteMany({
+    where: { kind: "PT", status: "SCHEDULED", startsAt: { lt: now }, bookings: { none: {} } },
+  });
+
   const due = await prisma.session.findMany({
     where: { status: "SCHEDULED" },
     select: { id: true, startsAt: true, durationMins: true },

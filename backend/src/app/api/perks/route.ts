@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { apiHandler, requireRole } from "@/lib/rbac";
+import { deleteOrConflict } from "@/lib/db-errors";
 
 const createSchema = z.object({
   name: z.string().min(1).max(200),
@@ -39,4 +40,18 @@ export const PATCH = apiHandler(async (req: Request) => {
     return perk;
   });
   return NextResponse.json({ perk });
+});
+
+export const DELETE = apiHandler(async (req: Request) => {
+  const session = await requireRole(["OWNER", "ADMIN"]);
+  const { id } = z.object({ id: z.string().min(1) }).parse(await req.json());
+  await deleteOrConflict(
+    () =>
+      prisma.$transaction(async (tx) => {
+        await tx.perkItem.delete({ where: { id } });
+        await audit(tx, { userId: session.user.id, action: "perk.delete", entity: "PerkItem", entityId: id, payload: {} });
+      }),
+    "Can't delete — this perk is still used by a membership plan.",
+  );
+  return NextResponse.json({ ok: true });
 });

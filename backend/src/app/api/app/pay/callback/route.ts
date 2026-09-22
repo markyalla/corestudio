@@ -1,5 +1,6 @@
 import { verifyTransaction } from "@/lib/paystack";
 import { handleChargeSuccess } from "@/lib/payment-flows";
+import { checkRateLimit, clientIp } from "@/lib/rate-limit";
 
 function html(body: string) {
   return new Response(
@@ -19,6 +20,14 @@ function html(body: string) {
 export async function GET(req: Request) {
   const reference = new URL(req.url).searchParams.get("reference");
   if (!reference) return html("Missing payment reference.");
+
+  // No bearer token is possible here — Paystack redirects the bare browser,
+  // not the app — so this endpoint is necessarily unauthenticated. Guard it
+  // with a per-IP cap instead, since it otherwise lets anyone burn calls
+  // against Paystack's verify API with arbitrary guessed reference strings.
+  if (!checkRateLimit(`pay-callback:${clientIp(req)}`, { max: 20, windowMs: 5 * 60 * 1000 })) {
+    return html("Too many requests — try again in a few minutes.");
+  }
 
   try {
     const tx = await verifyTransaction(reference);

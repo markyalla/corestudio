@@ -7,7 +7,7 @@ const schema = z.object({ trainerId: z.string().min(1) });
 
 /** Creates a Payout with PayoutLines atomically for everything owed. */
 export const POST = apiHandler(async (req: Request) => {
-  const session = await requireRole(["OWNER", "ADMIN"]);
+  const session = await requireRole(["OWNER", "ADMIN", "ACCOUNTANT"]);
   const { trainerId } = schema.parse(await req.json());
   const payout = await createPayout({ trainerId, actorUserId: session.user.id });
   return NextResponse.json({ payout }, { status: 201 });

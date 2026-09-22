@@ -13,17 +13,30 @@ async function api(path: string, method: string, body?: unknown): Promise<{ erro
   return { data };
 }
 
-const DAYS_AHEAD = 42; // 6 weeks
+const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
 
 function isoDate(d: Date) {
   return d.toISOString().slice(0, 10);
 }
 
+/** Mon=0 .. Sun=6, matching WEEKDAYS above (JS getUTCDay() is Sun=0..Sat=6). */
+function mondayIndex(d: Date) {
+  return (d.getUTCDay() + 6) % 7;
+}
+
 /** Shared "mark unavailable dates" widget — used both by a trainer managing
  *  their own calendar and by OWNER/ADMIN managing any trainer's from the
- *  Trainers page. Hard-block enforcement itself lives server-side; this is
- *  just the UI to set/clear the dates it checks against. */
+ *  Trainers page. Defaults to next month, so admins can plan who to assign
+ *  classes to before that month's timetable is built. Hard-block enforcement
+ *  itself lives server-side; this is just the UI to set/clear the dates it
+ *  checks against. */
 export function AvailabilityPanel({ trainerId }: { trainerId: string }) {
+  // 0 = current month, 1 = next month (default), 2 = the month after, etc.
+  const [monthOffset, setMonthOffset] = useState(1);
   const [marked, setMarked] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -32,13 +45,22 @@ export function AvailabilityPanel({ trainerId }: { trainerId: string }) {
 
   const today = new Date();
   today.setUTCHours(0, 0, 0, 0);
-  const days = Array.from({ length: DAYS_AHEAD }, (_, i) => new Date(today.getTime() + i * 86400000));
+  const monthStart = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + monthOffset, 1));
+  const monthEnd = new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 0));
+  const daysInMonth = monthEnd.getUTCDate();
+  const leadingBlanks = mondayIndex(monthStart);
+  const cells: (Date | null)[] = [
+    ...Array.from({ length: leadingBlanks }, () => null),
+    ...Array.from({ length: daysInMonth }, (_, i) => new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth(), i + 1))),
+  ];
+  while (cells.length % 7 !== 0) cells.push(null);
 
   async function load() {
     setLoading(true);
-    const from = isoDate(today);
-    const to = isoDate(days[days.length - 1]);
-    const res = await api(`/api/trainers/${trainerId}/unavailability?from=${from}&to=${to}`, "GET");
+    const res = await api(
+      `/api/trainers/${trainerId}/unavailability?from=${isoDate(monthStart)}&to=${isoDate(monthEnd)}`,
+      "GET",
+    );
     if (res.data) {
       const rows = (res.data as { dates: { date: string }[] }).dates;
       setMarked(new Set(rows.map((r) => r.date.slice(0, 10))));
@@ -47,10 +69,10 @@ export function AvailabilityPanel({ trainerId }: { trainerId: string }) {
   }
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- standard fetch-on-mount; load() sets loading state before its first await
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- standard fetch-on-mount/month-change; load() sets loading state before its first await
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trainerId]);
+  }, [trainerId, monthOffset]);
 
   async function toggleDay(day: Date) {
     setError(null);
@@ -93,28 +115,64 @@ export function AvailabilityPanel({ trainerId }: { trainerId: string }) {
       {conflictMsg && (
         <p className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">{conflictMsg}</p>
       )}
+
+      <div className="mb-2 flex items-center justify-between">
+        <button
+          onClick={() => setMonthOffset((m) => Math.max(0, m - 1))}
+          disabled={monthOffset === 0}
+          className="rounded-lg border border-stone-300 px-2 py-1 text-xs disabled:opacity-30"
+        >
+          ←
+        </button>
+        <p className="text-xs font-medium text-stone-700">
+          {MONTH_NAMES[monthStart.getUTCMonth()]} {monthStart.getUTCFullYear()}
+          {monthOffset === 1 && <span className="ml-1 text-stone-400">(next month)</span>}
+        </p>
+        <button
+          onClick={() => setMonthOffset((m) => m + 1)}
+          className="rounded-lg border border-stone-300 px-2 py-1 text-xs"
+        >
+          →
+        </button>
+      </div>
+
       {loading ? (
         <p className="text-xs text-stone-400">Loading…</p>
       ) : (
-        <div className="grid grid-cols-7 gap-1">
-          {days.map((d) => {
-            const iso = isoDate(d);
-            const isMarked = marked.has(iso);
-            return (
-              <button
-                key={iso}
-                onClick={() => toggleDay(d)}
-                title={iso}
-                className={`rounded px-1 py-1.5 text-[11px] ${
-                  isMarked ? "bg-red-100 text-red-700" : "bg-stone-50 text-stone-600 hover:bg-stone-100"
-                }`}
-              >
-                {d.toISOString().slice(5, 10)}
-              </button>
-            );
-          })}
+        <div>
+          <div className="grid grid-cols-7 gap-1">
+            {WEEKDAYS.map((w) => (
+              <p key={w} className="text-center text-[10px] font-medium text-stone-400">{w}</p>
+            ))}
+          </div>
+          <div className="mt-1 grid grid-cols-7 gap-1">
+            {cells.map((d, i) => {
+              if (!d) return <div key={`blank-${i}`} />;
+              const iso = isoDate(d);
+              const isMarked = marked.has(iso);
+              const isPast = d.getTime() < today.getTime();
+              return (
+                <button
+                  key={iso}
+                  onClick={() => toggleDay(d)}
+                  disabled={isPast}
+                  title={iso}
+                  className={`rounded px-1 py-1.5 text-[11px] ${
+                    isPast
+                      ? "cursor-not-allowed bg-stone-50 text-stone-300"
+                      : isMarked
+                        ? "bg-red-100 text-red-700"
+                        : "bg-stone-50 text-stone-600 hover:bg-stone-100"
+                  }`}
+                >
+                  {d.getUTCDate()}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
+
       <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
         <span className="text-stone-500">Block a range:</span>
         <input

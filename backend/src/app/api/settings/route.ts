@@ -7,8 +7,11 @@ import { apiHandler, requireRole } from "@/lib/rbac";
 const schema = z.object({
   name: z.string().min(1).optional(),
   momoNumber: z.string().nullable().optional(),
+  contactEmail: z.string().max(320).optional(),
+  whatsapp: z.string().max(30).optional(),
   advanceBookingDays: z.number().int().min(1).max(90).optional(),
   cancelCutoffHours: z.number().int().min(0).max(168).optional(),
+  socialSecurityPercent: z.number().int().min(0).max(100).optional(),
 });
 
 export const PATCH = apiHandler(async (req: Request) => {
