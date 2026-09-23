@@ -23,6 +23,7 @@ export default function LoginScreen() {
   const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -96,10 +97,13 @@ export default function LoginScreen() {
                 style={styles.input}
                 placeholder="Password"
                 placeholderTextColor={colors.textMuted}
-                secureTextEntry
+                secureTextEntry={!showPassword}
                 value={password}
                 onChangeText={setPassword}
               />
+              <Pressable onPress={() => setShowPassword((v) => !v)} hitSlop={8}>
+                <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={20} color={colors.textMuted} />
+              </Pressable>
             </View>
 
             {error && <Text style={styles.error}>{error}</Text>}

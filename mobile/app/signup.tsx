@@ -24,6 +24,8 @@ export default function SignupScreen() {
   const { login } = useAuth();
   const [form, setForm] = useState({ name: "", email: "", phone: "", password: "" });
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -118,10 +120,13 @@ export default function SignupScreen() {
                 style={styles.input}
                 placeholder="Password (8+ characters)"
                 placeholderTextColor={colors.textMuted}
-                secureTextEntry
+                secureTextEntry={!showPassword}
                 value={form.password}
                 onChangeText={(v) => setForm({ ...form, password: v })}
               />
+              <Pressable onPress={() => setShowPassword((v) => !v)} hitSlop={8}>
+                <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={20} color={colors.textMuted} />
+              </Pressable>
             </View>
             <View style={styles.inputWrap}>
               <Ionicons name="lock-closed-outline" size={20} color={colors.textMuted} style={styles.inputIcon} />
@@ -129,10 +134,13 @@ export default function SignupScreen() {
                 style={styles.input}
                 placeholder="Confirm password"
                 placeholderTextColor={colors.textMuted}
-                secureTextEntry
+                secureTextEntry={!showConfirm}
                 value={confirmPassword}
                 onChangeText={setConfirmPassword}
               />
+              <Pressable onPress={() => setShowConfirm((v) => !v)} hitSlop={8}>
+                <Ionicons name={showConfirm ? "eye-off-outline" : "eye-outline"} size={20} color={colors.textMuted} />
+              </Pressable>
             </View>
 
             {error && <Text style={styles.error}>{error}</Text>}
