@@ -18,6 +18,7 @@ import { router } from "expo-router";
 import { useAuth } from "@/lib/auth";
 import { ApiError, signup } from "@/lib/api";
 import { colors, radius, shadow } from "@/lib/theme";
+import { PhoneInput } from "@/components/PhoneInput";
 
 export default function SignupScreen() {
   const { login } = useAuth();
@@ -108,16 +109,8 @@ export default function SignupScreen() {
                 onChangeText={(v) => setForm({ ...form, email: v })}
               />
             </View>
-            <View style={styles.inputWrap}>
-              <Ionicons name="call-outline" size={20} color={colors.textMuted} style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="Phone (+233…)"
-                placeholderTextColor={colors.textMuted}
-                keyboardType="phone-pad"
-                value={form.phone}
-                onChangeText={(v) => setForm({ ...form, phone: v })}
-              />
+            <View style={styles.phoneWrap}>
+              <PhoneInput onChange={(phone) => setForm({ ...form, phone })} />
             </View>
             <View style={styles.inputWrap}>
               <Ionicons name="lock-closed-outline" size={20} color={colors.textMuted} style={styles.inputIcon} />
@@ -195,6 +188,7 @@ const styles = StyleSheet.create({
     marginBottom: 18,
   },
   inputIcon: { marginRight: 10 },
+  phoneWrap: { marginBottom: 18 },
   input: { flex: 1, paddingVertical: 16, fontSize: 16, color: colors.text },
   button: {
     backgroundColor: colors.green,

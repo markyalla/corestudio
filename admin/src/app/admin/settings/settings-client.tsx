@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatGHS, parseGHS } from "@backend/lib/money";
 import { fileToResizedDataUrl } from "@/lib/image";
+import { PhoneInput } from "@/lib/phone-input";
 
 type Studio = {
   name: string;
@@ -1076,7 +1077,7 @@ function StaffSection({ isOwner, onRun }: { isOwner: boolean; onRun: (a: () => P
       <div className="mt-3 flex flex-wrap gap-2">
         <input placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className={input} />
         <input placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className={input} />
-        <input placeholder="Phone" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className={input} />
+        <PhoneInput onChange={(phone) => setForm({ ...form, phone })} />
         <input type="password" placeholder="Password (8+ chars)" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className={input} />
         <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className={`bg-white ${input}`}>
           <option value="TRAINER">Trainer</option>

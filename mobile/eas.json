@@ -12,9 +12,16 @@
       "distribution": "internal",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://p4studio.theagbeko.com"
       }
     },
-    "production": {}
+    "production": {
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://p4studio.theagbeko.com"
+      }
+    }
   },
   "submit": {
     "production": {}

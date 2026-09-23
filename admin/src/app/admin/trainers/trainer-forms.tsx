@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { parseGHS } from "@backend/lib/money";
 import { fileToResizedDataUrl } from "@/lib/image";
+import { PhoneInput } from "@/lib/phone-input";
 import { AvailabilityPanel } from "../availability/availability-panel";
 import { PtWindowsPanel } from "./pt-windows-panel";
 
@@ -62,7 +63,7 @@ export function NewTrainerButton() {
         <div className="mt-4 space-y-3 text-sm">
           <input placeholder="Full name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full rounded-lg border border-stone-300 px-3 py-2" />
           <input placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="w-full rounded-lg border border-stone-300 px-3 py-2" />
-          <input placeholder="Phone" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="w-full rounded-lg border border-stone-300 px-3 py-2" />
+          <PhoneInput onChange={(phone) => setForm({ ...form, phone })} />
           <input placeholder="Specialty" value={form.specialty} onChange={(e) => setForm({ ...form, specialty: e.target.value })} className="w-full rounded-lg border border-stone-300 px-3 py-2" />
           <div className="flex gap-2">
             <input type="number" placeholder="Commission %" value={form.commission} onChange={(e) => setForm({ ...form, commission: e.target.value })} className="flex-1 rounded-lg border border-stone-300 px-3 py-2" />

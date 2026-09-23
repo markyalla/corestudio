@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { signIn } from "next-auth/react";
+import { PhoneInput } from "@/lib/phone-input";
 
 export function SignupForm() {
   const router = useRouter();
@@ -57,7 +58,7 @@ export function SignupForm() {
     <form onSubmit={submit} className="space-y-3">
       <input required placeholder="Full name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className={input} />
       <input required type="email" placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className={input} />
-      <input placeholder="Phone (optional, +233…)" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className={input} />
+      <PhoneInput onChange={(phone) => setForm({ ...form, phone })} />
       <input required type="password" placeholder="Password (8+ characters)" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className={input} />
       <input required type="password" placeholder="Confirm password" value={form.confirm} onChange={(e) => setForm({ ...form, confirm: e.target.value })} className={input} />
       {error && <p className="text-sm text-red-600">{error}</p>}

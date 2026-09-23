@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { parseGHS } from "@backend/lib/money";
+import { PhoneInput } from "@/lib/phone-input";
 
 type PlanOpt = { id: string; name: string };
 
@@ -53,7 +54,7 @@ export function NewMemberButton({ plans }: { plans: PlanOpt[] }) {
         <div className="mt-4 space-y-3 text-sm">
           <input placeholder="Full name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full rounded-lg border border-stone-300 px-3 py-2" />
           <input placeholder="Email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="w-full rounded-lg border border-stone-300 px-3 py-2" />
-          <input placeholder="Phone (+233…)" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="w-full rounded-lg border border-stone-300 px-3 py-2" />
+          <PhoneInput onChange={(phone) => setForm({ ...form, phone })} />
           <select value={form.planId} onChange={(e) => setForm({ ...form, planId: e.target.value })} className="w-full rounded-lg border border-stone-300 bg-white px-3 py-2">
             <option value="">No plan</option>
             {plans.map((p) => (

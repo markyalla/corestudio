@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { parseGHS, formatGHS } from "@backend/lib/money";
+import { PhoneInput } from "@/lib/phone-input";
 
 async function api(path: string, method: string, body: unknown): Promise<string | null> {
   const res = await fetch(path, {
@@ -60,7 +61,7 @@ export function NewStaffMemberButton() {
         <h2 className="text-lg font-semibold text-stone-900">New staff</h2>
         <div className="mt-4 space-y-3 text-sm">
           <input placeholder="Full name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full rounded-lg border border-stone-300 px-3 py-2" />
-          <input placeholder="Phone" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="w-full rounded-lg border border-stone-300 px-3 py-2" />
+          <PhoneInput onChange={(phone) => setForm({ ...form, phone })} />
           <select value={form.position} onChange={(e) => setForm({ ...form, position: e.target.value })} className="w-full rounded-lg border border-stone-300 bg-white px-3 py-2">
             {POSITIONS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
           </select>
