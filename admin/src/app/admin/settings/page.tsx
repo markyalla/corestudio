@@ -3,7 +3,7 @@ import { auth } from "@/auth";
 import { prisma } from "@backend/lib/prisma";
 import { SettingsClient } from "./settings-client";
 
-export const metadata = { title: "Settings — CoreStudio Admin" };
+export const metadata = { title: "Settings — P4Studio Admin" };
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {

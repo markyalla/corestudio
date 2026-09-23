@@ -6,7 +6,7 @@ import { RecordPaymentButton } from "./record-payment";
 import { ConfirmCashButton } from "./confirm-cash-button";
 import type { PaymentStatus, Prisma } from "@prisma/client";
 
-export const metadata = { title: "Payments — CoreStudio Admin" };
+export const metadata = { title: "Payments — P4Studio Admin" };
 export const dynamic = "force-dynamic";
 
 const STATUSES = ["PENDING", "CONFIRMED", "FAILED"] as const;

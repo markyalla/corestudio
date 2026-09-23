@@ -3,7 +3,7 @@ import { prisma } from "@backend/lib/prisma";
 import { formatGHS } from "@backend/lib/money";
 import { MemberEditPanel } from "../member-forms";
 
-export const metadata = { title: "Member — CoreStudio Admin" };
+export const metadata = { title: "Member — P4Studio Admin" };
 export const dynamic = "force-dynamic";
 
 export default async function MemberDetailPage({

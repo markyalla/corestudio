@@ -7,7 +7,7 @@ import {
   NewTaxPaymentButton, MarkTaxPaymentPaidButton,
 } from "./tax-client";
 
-export const metadata = { title: "Tax & Social Security — CoreStudio Admin" };
+export const metadata = { title: "Tax & Social Security — P4Studio Admin" };
 export const dynamic = "force-dynamic";
 
 export default async function TaxPage() {

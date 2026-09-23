@@ -5,7 +5,7 @@ import { prisma } from "@backend/lib/prisma";
 import { formatGHS } from "@backend/lib/money";
 import type { BookingStatus, Prisma } from "@prisma/client";
 
-export const metadata = { title: "Bookings — CoreStudio Admin" };
+export const metadata = { title: "Bookings — P4Studio Admin" };
 export const dynamic = "force-dynamic";
 
 const STATUSES = ["BOOKED", "WAITLIST", "ATTENDED", "NO_SHOW", "CANCELLED"] as const;

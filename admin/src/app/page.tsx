@@ -23,7 +23,7 @@ export default async function Landing() {
   return (
     <main className="min-h-screen bg-stone-100">
       <header className="mx-auto flex max-w-4xl items-center justify-between px-6 py-5">
-        <p className="text-lg font-semibold text-stone-900">CoreStudio</p>
+        <p className="text-lg font-semibold text-stone-900">P4Studio</p>
         <div className="flex gap-2">
           <Link href="/login" className="rounded-lg px-4 py-2 text-sm text-stone-600 hover:text-stone-900">
             Log in

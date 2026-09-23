@@ -29,8 +29,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     <div className="h-screen overflow-hidden bg-stone-100">
       <aside className="fixed inset-y-0 left-0 flex w-56 flex-col overflow-y-auto border-r border-stone-200 bg-white">
         <div className="px-5 py-5">
-          <p className="text-lg font-semibold text-stone-900">CoreStudio</p>
-          <p className="text-xs text-stone-400">Staff portal</p>
+          <p className="text-lg font-semibold text-stone-900">P4Studio</p>
+          <p className="text-xs text-stone-400">{session?.user?.name}</p>
         </div>
         <nav className="flex-1 space-y-0.5 px-3">
           {items.map((n) => (

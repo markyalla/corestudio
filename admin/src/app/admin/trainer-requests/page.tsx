@@ -3,7 +3,7 @@ import { prisma } from "@backend/lib/prisma";
 import { redirect } from "next/navigation";
 import { RequestsInbox } from "./requests-inbox";
 
-export const metadata = { title: "Trainer requests — CoreStudio Admin" };
+export const metadata = { title: "Trainer requests — P4Studio Admin" };
 export const dynamic = "force-dynamic";
 
 /** OWNER/ADMIN inbox for trainer-filed requests (cancel a class / heads-up

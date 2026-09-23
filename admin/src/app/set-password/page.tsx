@@ -1,6 +1,6 @@
 import { SetPasswordForm } from "./set-password-form";
 
-export const metadata = { title: "Set your password — CoreStudio" };
+export const metadata = { title: "Set your password — P4Studio" };
 
 export default function SetPasswordPage() {
   return (

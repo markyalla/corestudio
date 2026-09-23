@@ -4,7 +4,7 @@ import { prisma } from "@backend/lib/prisma";
 import { formatGHS } from "@backend/lib/money";
 import { computeOwedPerTrainer } from "@backend/lib/payouts";
 
-export const metadata = { title: "Dashboard — CoreStudio Admin" };
+export const metadata = { title: "Dashboard — P4Studio Admin" };
 export const dynamic = "force-dynamic";
 
 export default async function AdminDashboard() {

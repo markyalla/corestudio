@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { RequestForm } from "./request-form";
 import { TrainerPhotoUpload } from "./trainer-photo-upload";
 
-export const metadata = { title: "Requests — CoreStudio Admin" };
+export const metadata = { title: "Requests — P4Studio Admin" };
 export const dynamic = "force-dynamic";
 
 const STATUS_LABEL: Record<string, string> = {

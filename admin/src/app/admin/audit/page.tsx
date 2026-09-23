@@ -4,7 +4,7 @@ import { auth } from "@/auth";
 import { prisma } from "@backend/lib/prisma";
 import type { Prisma } from "@prisma/client";
 
-export const metadata = { title: "Audit Log — CoreStudio Admin" };
+export const metadata = { title: "Audit Log — P4Studio Admin" };
 export const dynamic = "force-dynamic";
 
 // Every distinct action string currently written anywhere in backend/src —
@@ -46,6 +46,9 @@ export default async function AuditLogPage({
   const session = await auth();
   if (session?.user?.role === "TRAINER") redirect("/admin/timetable");
   if (session?.user?.role === "ACCOUNTANT") redirect("/admin/payroll");
+  // Only ADMIN sees the full activity log across everyone — OWNER sees only
+  // their own actions, giving ADMIN the fuller oversight hand on the system.
+  const isAdmin = session?.user?.role === "ADMIN";
 
   const { entity, action, q, from, to } = await searchParams;
 
@@ -58,9 +61,10 @@ export default async function AuditLogPage({
       ...(to ? { lt: new Date(new Date(to).getTime() + 24 * 60 * 60 * 1000) } : {}),
     };
   }
-  if (q) {
+  if (isAdmin && q) {
     where.user = { is: { OR: [{ name: { contains: q, mode: "insensitive" } }, { email: { contains: q, mode: "insensitive" } }] } };
   }
+  if (!isAdmin) where.userId = session!.user.id;
 
   const logs = await prisma.auditLog.findMany({
     where,
@@ -73,8 +77,9 @@ export default async function AuditLogPage({
     <main className="p-8">
       <h1 className="text-2xl font-semibold text-stone-900">Audit Log</h1>
       <p className="mt-1 text-sm text-stone-500">
-        Every mutation across the web admin and mobile app — logins, bookings, payments, staff/settings
-        changes. Showing the latest 200 matching entries.
+        {isAdmin
+          ? "Every mutation across the web admin and mobile app — logins, bookings, payments, staff/settings changes. Showing the latest 200 matching entries."
+          : "Your own activity only — logins, bookings, payments, staff/settings changes you've made. Showing the latest 200 matching entries."}
       </p>
 
       <form className="mt-4 flex flex-wrap items-end gap-3 text-sm" method="GET">
@@ -104,12 +109,14 @@ export default async function AuditLogPage({
           <span className="text-xs text-stone-500">To</span>
           <input type="date" name="to" defaultValue={to ?? ""} className="mt-1 block rounded-lg border border-stone-300 bg-white px-3 py-2" />
         </label>
-        <label className="block">
-          <span className="text-xs text-stone-500">Actor</span>
-          <input name="q" defaultValue={q ?? ""} placeholder="Name or email…" className="mt-1 block rounded-lg border border-stone-300 bg-white px-3 py-2" />
-        </label>
+        {isAdmin && (
+          <label className="block">
+            <span className="text-xs text-stone-500">Actor</span>
+            <input name="q" defaultValue={q ?? ""} placeholder="Name or email…" className="mt-1 block rounded-lg border border-stone-300 bg-white px-3 py-2" />
+          </label>
+        )}
         <button className="rounded-lg bg-stone-900 px-4 py-2 font-medium text-white">Filter</button>
-        {(entity || action || q || from || to) && (
+        {(entity || action || (isAdmin && q) || from || to) && (
           <Link href="/admin/audit" className="rounded-lg border border-stone-300 px-4 py-2 text-stone-600">Clear</Link>
         )}
       </form>

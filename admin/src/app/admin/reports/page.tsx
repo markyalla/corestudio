@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { prisma } from "@backend/lib/prisma";
 
-export const metadata = { title: "Reports — CoreStudio Admin" };
+export const metadata = { title: "Reports — P4Studio Admin" };
 export const dynamic = "force-dynamic";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];

@@ -5,7 +5,7 @@ import { formatGHS } from "@backend/lib/money";
 import { computeStaffOwed } from "@backend/lib/payroll";
 import { NewStaffMemberButton, StaffMemberRow, PayAction, MarkPayrollPaidButton } from "./payroll-client";
 
-export const metadata = { title: "Payroll — CoreStudio Admin" };
+export const metadata = { title: "Payroll — P4Studio Admin" };
 export const dynamic = "force-dynamic";
 
 const POSITION_LABELS: Record<string, string> = {

@@ -4,7 +4,7 @@ import { prisma } from "@backend/lib/prisma";
 import { formatGHS } from "@backend/lib/money";
 import { NewTrainerButton, TrainerRow } from "./trainer-forms";
 
-export const metadata = { title: "Trainers — CoreStudio Admin" };
+export const metadata = { title: "Trainers — P4Studio Admin" };
 export const dynamic = "force-dynamic";
 
 export default async function TrainersPage() {

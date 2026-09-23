@@ -4,7 +4,7 @@ import { prisma } from "@backend/lib/prisma";
 import { formatGHS } from "@backend/lib/money";
 import { computeOwedPerTrainer } from "@backend/lib/payouts";
 
-export const metadata = { title: "My earnings — CoreStudio" };
+export const metadata = { title: "My earnings — P4Studio" };
 export const dynamic = "force-dynamic";
 
 /** Trainer-only view: accrued earnings and payout history. */

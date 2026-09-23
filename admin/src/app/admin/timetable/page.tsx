@@ -2,7 +2,7 @@ import { auth } from "@/auth";
 import { prisma } from "@backend/lib/prisma";
 import { TimetableClient } from "./timetable-client";
 
-export const metadata = { title: "Timetable — CoreStudio Admin" };
+export const metadata = { title: "Timetable — P4Studio Admin" };
 export const dynamic = "force-dynamic";
 
 type View = "day" | "week" | "month";

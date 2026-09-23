@@ -5,7 +5,7 @@ import { prisma } from "@backend/lib/prisma";
 import { formatGHS } from "@backend/lib/money";
 import { NewMemberButton } from "./member-forms";
 
-export const metadata = { title: "Members — CoreStudio Admin" };
+export const metadata = { title: "Members — P4Studio Admin" };
 export const dynamic = "force-dynamic";
 
 export default async function MembersPage() {

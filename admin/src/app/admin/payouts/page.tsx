@@ -5,7 +5,7 @@ import { formatGHS } from "@backend/lib/money";
 import { computeOwedPerTrainer } from "@backend/lib/payouts";
 import { PayoutActions, MarkPaidButton } from "./payout-actions";
 
-export const metadata = { title: "Payouts — CoreStudio Admin" };
+export const metadata = { title: "Payouts — P4Studio Admin" };
 export const dynamic = "force-dynamic";
 
 export default async function PayoutsPage() {

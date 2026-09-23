@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@backend/lib/prisma";
 import { SignupForm } from "./signup-form";
 
-export const metadata = { title: "Set up your studio — CoreStudio" };
+export const metadata = { title: "Set up your studio — P4Studio" };
 export const dynamic = "force-dynamic";
 
 export default async function SignupPage() {
