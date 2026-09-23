@@ -28,6 +28,7 @@ export const GET = apiHandler(async (req: Request) => {
       location: true,
       bookings: {
         where: { memberId: member.id, status: { in: ["BOOKED", "WAITLIST", "ATTENDED"] } },
+        include: { payment: { select: { status: true } } },
       },
     },
     orderBy: { startsAt: "asc" },
@@ -64,6 +65,7 @@ export const GET = apiHandler(async (req: Request) => {
       },
       location: s.location ? { id: s.location.id, name: s.location.name, address: s.location.address } : null,
       myStatus: s.bookings[0]?.status ?? null,
+      myPaymentPending: s.bookings[0]?.payment?.status === "PENDING",
     })),
   });
 });

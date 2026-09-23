@@ -40,6 +40,7 @@ export default async function BookingsPage({
     include: {
       member: { include: { user: true } },
       session: { include: { classType: true, trainer: { include: { user: true } } } },
+      payment: { select: { status: true } },
     },
     orderBy: { createdAt: "desc" },
     take: 200,
@@ -101,6 +102,11 @@ export default async function BookingsPage({
                 <td className="px-4 py-2.5 text-stone-600">{b.session.trainer.user.name}</td>
                 <td className="px-4 py-2.5">
                   <span className="rounded-full bg-stone-100 px-2 py-0.5 text-xs">{b.status}</span>
+                  {b.status === "BOOKED" && b.payment?.status === "PENDING" && (
+                    <span className="ml-1 rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-700">
+                      Payment pending
+                    </span>
+                  )}
                 </td>
                 <td className="px-4 py-2.5 text-stone-600">{b.paidWith ?? "—"}</td>
                 <td className="px-4 py-2.5 text-stone-600">{b.amountGHS > 0 ? formatGHS(b.amountGHS) : "—"}</td>

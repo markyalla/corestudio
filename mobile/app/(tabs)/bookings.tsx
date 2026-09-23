@@ -22,6 +22,7 @@ interface BookingItem {
   amountGHS: number;
   cancelReason: string | null;
   promotionExpiresAt: string | null;
+  paymentPending: boolean;
   session: {
     startsAt: string;
     classType: { name: string } | null;
@@ -36,17 +37,24 @@ interface BookingsResponse {
 
 const STATUS_STYLE: Record<string, { bg: string; fg: string }> = {
   BOOKED: { bg: colors.greenTint, fg: colors.greenDark },
+  PENDING: { bg: "#FFF3E0", fg: "#B8620A" },
   WAITLIST: { bg: "#FFF3E0", fg: "#B8620A" },
   ATTENDED: { bg: colors.greenTint, fg: colors.greenDark },
   NO_SHOW: { bg: "#FDECEA", fg: "#C0392B" },
   CANCELLED: { bg: colors.card, fg: colors.textMuted },
 };
 
-function StatusPill({ status }: { status: string }) {
-  const s = STATUS_STYLE[status] ?? STATUS_STYLE.CANCELLED;
+// A cash booking reserves the spot right away, but stays flagged as pending
+// until staff confirm the cash was actually collected — shown as its own
+// "payment pending" pill instead of "Booked" so it isn't mistaken for paid.
+function StatusPill({ status, paymentPending }: { status: string; paymentPending: boolean }) {
+  const label = status === "BOOKED" && paymentPending ? "PENDING" : status;
+  const s = STATUS_STYLE[label] ?? STATUS_STYLE.CANCELLED;
   return (
     <View style={[pillStyles.pill, { backgroundColor: s.bg }]}>
-      <Text style={[pillStyles.text, { color: s.fg }]}>{status.replace("_", " ")}</Text>
+      <Text style={[pillStyles.text, { color: s.fg }]}>
+        {label === "PENDING" ? "Payment pending" : status.replace("_", " ")}
+      </Text>
     </View>
   );
 }
@@ -155,8 +163,12 @@ export default function BookingsScreen() {
                   {new Date(item.session.startsAt).toLocaleString()} · {item.session.trainer.name}
                 </Text>
               </View>
-              <StatusPill status={item.status} />
+              <StatusPill status={item.status} paymentPending={item.paymentPending} />
             </View>
+
+            {item.status === "BOOKED" && item.paymentPending && (
+              <Text style={styles.rescheduleNote}>Pay at the studio to confirm this spot — a staff member will mark it received.</Text>
+            )}
 
             {item.status === "CANCELLED" && item.cancelReason && (
               <Text style={styles.rescheduleNote}>{item.cancelReason}</Text>

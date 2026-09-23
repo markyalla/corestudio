@@ -24,6 +24,7 @@ export const GET = apiHandler(async (req: Request) => {
     where: { memberId: member.id },
     include: {
       session: { include: { classType: true, trainer: { include: { user: true } }, location: true } },
+      payment: { select: { status: true } },
     },
     orderBy: { session: { startsAt: "desc" } },
   });
@@ -50,6 +51,9 @@ export const GET = apiHandler(async (req: Request) => {
       amountGHS: b.amountGHS,
       cancelReason: b.cancelReason,
       promotionExpiresAt: b.promotionExpiresAt,
+      // Only cash bookings ever have a linked pending payment — Paystack/
+      // credit/wallet/comp bookings are only ever created once already paid.
+      paymentPending: b.payment?.status === "PENDING",
       session: {
         id: b.session.id,
         startsAt: b.session.startsAt,

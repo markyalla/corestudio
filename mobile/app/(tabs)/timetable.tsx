@@ -29,6 +29,7 @@ export interface SessionItem {
   trainer: { id: string; name: string; specialty: string; bio: string; photoUrl: string | null; calendarColor: string };
   location: { id: string; name: string; address: string } | null;
   myStatus: string | null;
+  myPaymentPending: boolean;
 }
 
 export interface SessionsResponse {
@@ -189,8 +190,14 @@ export default function TimetableScreen() {
           )}
           {mine && (
             <View style={styles.myStatusBadge}>
-              <Ionicons name={booked ? "checkmark-circle" : "time"} size={12} color={colors.greenDark} />
-              <Text style={styles.myStatusText}>{booked ? "You're in" : "Waitlisted"}</Text>
+              <Ionicons
+                name={booked && !item.myPaymentPending ? "checkmark-circle" : "time"}
+                size={12}
+                color={item.myPaymentPending ? "#B8620A" : colors.greenDark}
+              />
+              <Text style={[styles.myStatusText, item.myPaymentPending && { color: "#B8620A" }]}>
+                {item.myPaymentPending ? "Payment pending" : booked ? "You're in" : "Waitlisted"}
+              </Text>
             </View>
           )}
           {closed && (

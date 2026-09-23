@@ -65,7 +65,12 @@ export async function api<T>(
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
     if (res.status === 401) await clearToken();
-    throw new ApiError(res.status, body.error ?? "Request failed");
+    // On a Zod validation failure the backend's generic "Validation failed"
+    // is useless on its own — body.issues carries the actual per-field
+    // reason (e.g. "Enter a valid phone number"), so surface that instead
+    // when present.
+    const detail = Array.isArray(body.issues) ? body.issues[0]?.message : undefined;
+    throw new ApiError(res.status, detail ?? body.error ?? "Request failed");
   }
   return res.json() as Promise<T>;
 }

@@ -61,15 +61,6 @@ export async function bookSessionCash(opts: {
     });
     if (taken >= session.capacity) throw new ApiError(410, "This session is full");
 
-    const payment = await tx.payment.create({
-      data: {
-        memberId: member.id,
-        amountGHS: session.priceGHS,
-        method: "CASH",
-        description: `Booking (cash — pending): ${session.classType?.name ?? "Private class"} ${session.startsAt.toISOString()}`,
-        status: "PENDING",
-      },
-    });
     const booking = await tx.booking.create({
       data: {
         sessionId: session.id,
@@ -77,6 +68,20 @@ export async function bookSessionCash(opts: {
         status: "BOOKED",
         paidWith: "CASH",
         amountGHS: session.priceGHS,
+      },
+    });
+    // Holds the spot right away (the booking itself), but linking the
+    // payment lets the app show "payment pending" and block check-in (see
+    // checkInBooking) until a staff member actually confirms the cash was
+    // collected — see confirmCashPayment.
+    const payment = await tx.payment.create({
+      data: {
+        memberId: member.id,
+        bookingId: booking.id,
+        amountGHS: session.priceGHS,
+        method: "CASH",
+        description: `Booking (cash — pending): ${session.classType?.name ?? "Private class"} ${session.startsAt.toISOString()}`,
+        status: "PENDING",
       },
     });
     await audit(tx, {
@@ -401,10 +406,13 @@ export async function promoteWaitlist(sessionId: string): Promise<void> {
 /** Business rule 4. Staff check-in: BOOKED → ATTENDED. */
 export async function checkInBooking(opts: { bookingId: string; actorUserId: string }) {
   return prisma.$transaction(async (tx) => {
-    const booking = await tx.booking.findUnique({ where: { id: opts.bookingId } });
+    const booking = await tx.booking.findUnique({ where: { id: opts.bookingId }, include: { payment: true } });
     if (!booking) throw new ApiError(404, "Booking not found");
     if (booking.status !== "BOOKED") {
       throw new ApiError(400, `Cannot check in a ${booking.status} booking`);
+    }
+    if (booking.payment?.status === "PENDING") {
+      throw new ApiError(400, "Cash payment hasn't been confirmed yet — confirm it on the Payments page first");
     }
     const updated = await tx.booking.update({
       where: { id: booking.id },

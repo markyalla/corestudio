@@ -422,6 +422,7 @@ model Booking {
   member     Member      @relation(fields: [memberId], references: [id])
   memberPackage MemberPackage? @relation(fields: [memberPackageId], references: [id])
   payoutLine PayoutLine?
+  payment    Payment?
 
   @@index([sessionId, status])
   @@index([memberId, status])
@@ -442,11 +443,17 @@ model Payment {
   // Same idea as planId, for a cash Package purchase — tells staff
   // confirming the cash payment which Package to grant.
   packageId   String?
+  // Same idea again, for a cash class/session booking (bookSessionCash) —
+  // the booking is created BOOKED right away (holds the spot), but this is
+  // how the app knows to still show "payment pending" and block check-in
+  // until a staff member confirms it (see confirmCashPayment).
+  bookingId   String?       @unique
   createdAt   DateTime      @default(now())
 
   member  Member          @relation(fields: [memberId], references: [id])
   plan    MembershipPlan? @relation(fields: [planId], references: [id])
   pkg     Package?        @relation(fields: [packageId], references: [id])
+  booking Booking?        @relation(fields: [bookingId], references: [id])
 
   @@index([memberId, status])
 }

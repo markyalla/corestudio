@@ -21,6 +21,7 @@ interface SessionDetail {
   trainer: { id: string; name: string; specialty: string; bio: string; photoUrl: string | null; calendarColor: string };
   location: { id: string; name: string; address: string } | null;
   myStatus: string | null;
+  myPaymentPending?: boolean;
   cutoffMinutes?: number;
 }
 
@@ -243,7 +244,9 @@ export default function SessionDetailScreen() {
           ) : (
             <Text style={[styles.buttonText, disabled && styles.buttonTextDisabled]}>
               {booked
-                ? "You're booked"
+                ? session.myPaymentPending
+                  ? "Booked — payment pending"
+                  : "You're booked"
                 : waitlisted
                   ? "On waitlist"
                   : closed
@@ -254,6 +257,9 @@ export default function SessionDetailScreen() {
             </Text>
           )}
         </Pressable>
+        {booked && session.myPaymentPending && (
+          <Text style={styles.closedNoticeText}>Pay at the studio to confirm — a staff member will mark it received.</Text>
+        )}
         {!disabled && !full && (
           <Pressable style={styles.cashButton} onPress={onPayCash} disabled={booking}>
             <Text style={styles.cashButtonText}>Pay with cash at the studio</Text>

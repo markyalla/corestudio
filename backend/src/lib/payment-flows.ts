@@ -194,8 +194,26 @@ export async function confirmCashPayment(opts: { paymentId: string; actorUserId:
     if (payment.packageId) {
       return activatePackage(tx, { memberId: payment.memberId, packageId: payment.packageId, reference: payment.id });
     }
-    if (!payment.planId) return { note: "no plan on this payment" };
-    return activateMembership(tx, { memberId: payment.memberId, planId: payment.planId });
+    if (payment.planId) {
+      return activateMembership(tx, { memberId: payment.memberId, planId: payment.planId });
+    }
+    if (payment.bookingId) {
+      const booking = await tx.booking.findUnique({
+        where: { id: payment.bookingId },
+        include: {
+          member: { include: { user: true } },
+          session: { include: { classType: true } },
+        },
+      });
+      if (!booking) return { note: "booking gone" };
+      const when = booking.session.startsAt.toISOString().slice(0, 16).replace("T", " ");
+      const className = booking.session.classType?.name ?? "your session";
+      return {
+        phone: booking.member.user.phone,
+        message: `Payment received for ${className} on ${when} — you're all set!`,
+      };
+    }
+    return { note: "no plan/package/booking on this payment" };
   });
 
   if ("phone" in outcome && outcome.phone) {
