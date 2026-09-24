@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Modal, View, Text, Pressable, ScrollView, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { colors, radius, shadow } from "@/lib/theme";
@@ -13,6 +14,7 @@ export function DetailModal({
   metaLines,
   description,
   perks,
+  children,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -21,6 +23,9 @@ export function DetailModal({
   metaLines: string[];
   description?: string;
   perks: string[];
+  /** Extra content (e.g. Renew/Change-plan buttons, a package's bookable
+   *  sessions) rendered between perks and the Close button. */
+  children?: ReactNode;
 }) {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -50,6 +55,8 @@ export function DetailModal({
                 ))}
               </>
             )}
+
+            {children}
 
             <Pressable style={({ pressed }) => [styles.closeButton, pressed && { opacity: 0.7 }]} onPress={onClose}>
               <Text style={styles.closeButtonText}>Close</Text>

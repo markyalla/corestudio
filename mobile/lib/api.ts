@@ -160,6 +160,7 @@ export function subscribeToPlanWithCash(planId: string) {
 export interface PackageOption {
   id: string;
   name: string;
+  classTypeId: string;
   classTypeName: string;
   classTypeDescription: string;
   durationMins: number;
@@ -172,6 +173,7 @@ export interface PackageOption {
 export interface MyPackage {
   id: string;
   name: string;
+  classTypeId: string;
   classTypeName: string;
   classTypeDescription: string;
   sessionsLeft: number;

@@ -37,6 +37,7 @@ export const GET = apiHandler(async (req: Request) => {
     packages: packages.map((p) => ({
       id: p.id,
       name: p.name,
+      classTypeId: p.classTypeId,
       classTypeName: p.classType.name,
       classTypeDescription: p.classType.description,
       durationMins: p.classType.durationMins,
@@ -48,6 +49,7 @@ export const GET = apiHandler(async (req: Request) => {
     myPackages: mine.map((mp) => ({
       id: mp.id,
       name: mp.package.name,
+      classTypeId: mp.package.classTypeId,
       classTypeName: mp.package.classType.name,
       classTypeDescription: mp.package.classType.description,
       sessionsLeft: mp.sessionsLeft,

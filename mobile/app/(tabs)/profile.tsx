@@ -19,8 +19,6 @@ import {
   api,
   ApiError,
   mediaUrl,
-  verifyPayment,
-  renewPlanWithCash,
   getMemberLocations,
   setPreferredLocation,
   type LocationOption,
@@ -28,8 +26,6 @@ import {
 import { formatGHS } from "@/lib/money";
 import { useAuth } from "@/lib/auth";
 import { colors, radius, shadow } from "@/lib/theme";
-import { CheckoutModal } from "@/components/CheckoutModal";
-import { DetailModal } from "@/components/DetailModal";
 
 interface ProfileResponse {
   member: {
@@ -85,13 +81,10 @@ export default function ProfileScreen() {
   const { logout, logoutAll } = useAuth();
   const [profile, setProfile] = useState<ProfileResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [renewing, setRenewing] = useState(false);
-  const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
   const [locationModal, setLocationModal] = useState(false);
   const [locations, setLocations] = useState<LocationOption[]>([]);
   const [savingLocationId, setSavingLocationId] = useState<string | null>(null);
   const [photoBusy, setPhotoBusy] = useState(false);
-  const [planDetailOpen, setPlanDetailOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -156,80 +149,11 @@ export default function ProfileScreen() {
     }
   }
 
-  /** Plans require a location first — route there only once one is set. */
-  function goToPlans() {
-    if (!profile?.member.location) {
-      Alert.alert(
-        "Pick your studio location first",
-        "Choose the studio you'll attend so we can show you the right classes.",
-        [{ text: "Choose location", onPress: openLocationPicker }],
-      );
-      return;
-    }
-    router.push("/plans");
-  }
-
   useFocusEffect(
     useCallback(() => {
       load();
     }, [load]),
   );
-
-  async function onRenew() {
-    setRenewing(true);
-    try {
-      const res = await api<{ authorizationUrl: string; reference?: string }>("/api/app/renew", {
-        method: "POST",
-      });
-      setCheckoutUrl(res.authorizationUrl);
-    } catch (e) {
-      Alert.alert("Couldn't start renewal", e instanceof ApiError ? e.message : "Try again");
-      setRenewing(false);
-    }
-  }
-
-  function onRenewCash() {
-    Alert.alert(
-      "Pay with cash",
-      "Renew at the studio — a staff member confirms your payment there and your credits top up right after.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Confirm",
-          onPress: async () => {
-            setRenewing(true);
-            try {
-              await renewPlanWithCash();
-              Alert.alert("Saved", "Pay at the studio — staff will confirm it and your credits will top up.");
-              await load();
-            } catch (e) {
-              Alert.alert("Couldn't do that", e instanceof ApiError ? e.message : "Try again");
-            } finally {
-              setRenewing(false);
-            }
-          },
-        },
-      ],
-    );
-  }
-
-  async function onCheckoutClose(reference: string | null) {
-    setCheckoutUrl(null);
-    if (reference) {
-      try {
-        const { status } = await verifyPayment(reference);
-        if (status === "success") {
-          Alert.alert("Plan renewed!", "Your credits have been topped up.");
-        } else {
-          Alert.alert("Payment not completed", `Status: ${status}.`);
-        }
-      } catch {
-        Alert.alert("Couldn't confirm payment", "If you completed checkout, check back shortly.");
-      }
-    }
-    await load();
-    setRenewing(false);
-  }
 
   async function onLogout() {
     await logout();
@@ -256,21 +180,6 @@ export default function ProfileScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
-      <CheckoutModal url={checkoutUrl} onClose={onCheckoutClose} />
-      {profile?.plan && (
-        <DetailModal
-          visible={planDetailOpen}
-          onClose={() => setPlanDetailOpen(false)}
-          title={profile.plan.name}
-          price={`${formatGHS(profile.plan.priceGHS)} / ${profile.plan.cycleDays}d`}
-          metaLines={[
-            `${profile.plan.classesPerCycle} classes${profile.plan.bonusCredits > 0 ? ` + ${profile.plan.bonusCredits} bonus` : ""} per cycle`,
-            `${profile.member.creditsLeft} classes left right now`,
-          ]}
-          description={profile.plan.description}
-          perks={profile.plan.perks}
-        />
-      )}
       <Modal
         visible={locationModal}
         transparent
@@ -343,68 +252,6 @@ export default function ProfileScreen() {
                   <Text style={styles.name} numberOfLines={1}>{profile.user.name}</Text>
                   <Text style={styles.sub} numberOfLines={1}>{profile.user.email}</Text>
                 </View>
-              </View>
-
-              <View style={[styles.card, shadow.card]}>
-                <Pressable
-                  style={styles.cardRow}
-                  disabled={!profile.plan}
-                  onPress={() => setPlanDetailOpen(true)}
-                >
-                  <Text style={styles.cardLabel}>{profile.plan?.name ?? "No plan"}</Text>
-                  <Ionicons name={profile.plan ? "chevron-forward" : "ribbon-outline"} size={20} color={colors.green} />
-                </Pressable>
-                <Text style={styles.cardValue}>{profile.member.creditsLeft} classes left</Text>
-                {profile.member.walletGHS > 0 && (
-                  <Text style={styles.cardSub}>Wallet · {formatGHS(profile.member.walletGHS)}</Text>
-                )}
-                {profile.plan ? (
-                  <>
-                    <View style={styles.planButtonRow}>
-                      <Pressable
-                        style={({ pressed }) => [styles.button, styles.buttonFlex, pressed && styles.buttonPressed]}
-                        disabled={renewing}
-                        onPress={onRenew}
-                      >
-                        {renewing ? (
-                          <ActivityIndicator color={colors.white} />
-                        ) : (
-                          <Text style={styles.buttonText}>Renew plan</Text>
-                        )}
-                      </Pressable>
-                      <Pressable
-                        style={({ pressed }) => [styles.secondaryButton, styles.buttonFlex, pressed && styles.secondaryPressed]}
-                        onPress={goToPlans}
-                      >
-                        <Text style={styles.secondaryButtonText}>Change plan</Text>
-                      </Pressable>
-                    </View>
-                    <Pressable style={styles.cashButton} onPress={onRenewCash} disabled={renewing}>
-                      <Text style={styles.cashButtonText}>Pay with cash at the studio</Text>
-                    </Pressable>
-                  </>
-                ) : (
-                  <Pressable
-                    style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
-                    onPress={goToPlans}
-                  >
-                    <Text style={styles.buttonText}>Choose a plan</Text>
-                  </Pressable>
-                )}
-              </View>
-
-              <View style={[styles.card, shadow.card]}>
-                <View style={styles.cardRow}>
-                  <Text style={styles.cardLabel}>Packages</Text>
-                  <Ionicons name="pricetags-outline" size={20} color={colors.green} />
-                </View>
-                <Text style={styles.cardSub}>One-time session bundles — massage, physio, private Pilates and more.</Text>
-                <Pressable
-                  style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
-                  onPress={() => router.push("/packages")}
-                >
-                  <Text style={styles.buttonText}>Browse packages</Text>
-                </Pressable>
               </View>
 
               <Text style={styles.sectionTitle}>Studio location</Text>
@@ -577,33 +424,6 @@ const styles = StyleSheet.create({
   },
   locationOptionPressed: { opacity: 0.6 },
   locationOptionName: { fontSize: 15, fontWeight: "600", color: colors.text },
-  cardRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 },
-  cardLabel: { fontSize: 16, fontWeight: "600", color: colors.text, flexShrink: 1 },
-  cardValue: { fontSize: 20, fontWeight: "700", color: colors.text, marginTop: 6 },
-  cardSub: { fontSize: 13, color: colors.textMuted, marginTop: 4 },
-  button: {
-    backgroundColor: colors.green,
-    borderRadius: radius.sm,
-    paddingVertical: 11,
-    alignItems: "center",
-    marginTop: 14,
-  },
-  buttonPressed: { backgroundColor: colors.greenDark },
-  buttonText: { color: colors.white, fontWeight: "700" },
-  planButtonRow: { flexDirection: "row", gap: 10, marginTop: 14 },
-  buttonFlex: { flex: 1, marginTop: 0 },
-  cashButton: { alignItems: "center", paddingVertical: 10, marginTop: 6 },
-  cashButtonText: { color: colors.textMuted, fontWeight: "600", fontSize: 13 },
-  secondaryButton: {
-    backgroundColor: colors.white,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.sm,
-    paddingVertical: 11,
-    alignItems: "center",
-  },
-  secondaryPressed: { backgroundColor: colors.card },
-  secondaryButtonText: { color: colors.text, fontWeight: "700" },
   membershipCard: { gap: 12 },
   membershipRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   membershipLabel: { fontSize: 13, color: colors.textMuted },

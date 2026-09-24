@@ -1,24 +1,41 @@
-import { useCallback, useState } from "react";
-import { View, Text, ScrollView, RefreshControl, StyleSheet, Pressable, Linking } from "react-native";
+import { useCallback, useMemo, useState } from "react";
+import {
+  View,
+  Text,
+  ScrollView,
+  RefreshControl,
+  StyleSheet,
+  Pressable,
+  Linking,
+  Alert,
+  ActivityIndicator,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router, useFocusEffect } from "expo-router";
 import {
   api,
+  ApiError,
   getAnnouncements,
   getContact,
   getMotivation,
   getPackages,
   getProgress,
+  renewPlanWithCash,
+  subscribeToPackage,
+  subscribeToPackageWithCash,
+  verifyPayment,
   type Announcement,
   type ContactInfo,
   type MyPackage,
+  type PackageOption,
   type ProgressResponse,
 } from "@/lib/api";
 import { formatGHS } from "@/lib/money";
 import { colors, radius, shadow } from "@/lib/theme";
 import { DetailModal } from "@/components/DetailModal";
+import { CheckoutModal } from "@/components/CheckoutModal";
 import type { SessionItem, SessionsResponse } from "./timetable";
 
 interface ProfileResponse {
@@ -33,6 +50,16 @@ interface ProfileResponse {
     description: string;
     perks: string[];
   } | null;
+}
+
+/** Front-desk phone fields are free text an admin may fill with more than one
+ *  number (e.g. "024 111 2222 / 020 333 4444") — split them so each becomes
+ *  its own tappable "tel:" link instead of one link that dials both at once. */
+function splitPhones(raw: string): string[] {
+  return raw
+    .split(/[,/;&\n]+|\band\b/gi)
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 interface BookingsResponse {
@@ -64,10 +91,21 @@ export default function HomeScreen() {
   const [progress, setProgress] = useState<ProgressResponse | null>(null);
   const [motivation, setMotivation] = useState<string | null>(null);
   const [upcomingClasses, setUpcomingClasses] = useState<SessionItem[]>([]);
+  const [allSessions, setAllSessions] = useState<SessionItem[]>([]);
   const [classCutoff, setClassCutoff] = useState(45);
   const [myPackages, setMyPackages] = useState<MyPackage[]>([]);
+  const [availablePackages, setAvailablePackages] = useState<PackageOption[]>([]);
   const [loading, setLoading] = useState(true);
-  const [detail, setDetail] = useState<{ kind: "plan" } | { kind: "package"; pkg: MyPackage } | null>(null);
+  const [detail, setDetail] = useState<
+    | { kind: "plan" }
+    | { kind: "myPackage"; pkg: MyPackage }
+    | { kind: "promoPackage"; pkg: PackageOption }
+    | null
+  >(null);
+  const [renewingPlan, setRenewingPlan] = useState(false);
+  const [subscribingPackageId, setSubscribingPackageId] = useState<string | null>(null);
+  const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
+  const [checkoutKind, setCheckoutKind] = useState<"plan" | "package" | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -87,18 +125,18 @@ export default function HomeScreen() {
         ]);
       setProfile(profileRes);
       setMyPackages(packagesRes.myPackages);
+      setAvailablePackages(packagesRes.packages);
       setContact(contactRes);
       setAnnouncements(announcementsRes.announcements);
       setProgress(progressRes);
       setMotivation(motivationRes.text);
       setClassCutoff(sessionsRes.bookingCutoffMinutes);
       const nowMs = Date.now();
-      setUpcomingClasses(
-        sessionsRes.sessions
-          .filter((s) => new Date(s.startsAt).getTime() > nowMs)
-          .sort((a, b) => a.startsAt.localeCompare(b.startsAt))
-          .slice(0, 6),
-      );
+      const futureSessions = sessionsRes.sessions
+        .filter((s) => new Date(s.startsAt).getTime() > nowMs)
+        .sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+      setAllSessions(futureSessions);
+      setUpcomingClasses(futureSessions.slice(0, 6));
       const now = new Date();
       const upcoming = bookingsRes.bookings
         .filter((b) => b.status === "BOOKED" && new Date(b.session.startsAt) > now)
@@ -125,6 +163,127 @@ export default function HomeScreen() {
       load();
     }, [load]),
   );
+
+  const packageSessions = useMemo(() => {
+    if (detail?.kind !== "myPackage") return [];
+    return allSessions.filter((s) => s.classType?.id === detail.pkg.classTypeId);
+  }, [detail, allSessions]);
+
+  function openSession(item: SessionItem) {
+    setDetail(null);
+    router.push({
+      pathname: "/session/[id]",
+      params: { id: item.id, data: JSON.stringify({ ...item, cutoffMinutes: classCutoff }) },
+    });
+  }
+
+  async function onRenewPlan() {
+    setRenewingPlan(true);
+    setCheckoutKind("plan");
+    try {
+      const res = await api<{ authorizationUrl: string; reference?: string }>("/api/app/renew", {
+        method: "POST",
+      });
+      setCheckoutUrl(res.authorizationUrl);
+    } catch (e) {
+      Alert.alert("Couldn't start renewal", e instanceof ApiError ? e.message : "Try again");
+      setRenewingPlan(false);
+    }
+  }
+
+  function onRenewPlanCash() {
+    Alert.alert(
+      "Pay with cash",
+      "Renew at the studio — a staff member confirms your payment there and your credits top up right after.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Confirm",
+          onPress: async () => {
+            setRenewingPlan(true);
+            try {
+              await renewPlanWithCash();
+              Alert.alert("Saved", "Pay at the studio — staff will confirm it and your credits will top up.");
+              setDetail(null);
+              await load();
+            } catch (e) {
+              Alert.alert("Couldn't do that", e instanceof ApiError ? e.message : "Try again");
+            } finally {
+              setRenewingPlan(false);
+            }
+          },
+        },
+      ],
+    );
+  }
+
+  function onChangePlan() {
+    setDetail(null);
+    router.push("/plans");
+  }
+
+  async function onBuyPackage(pkg: PackageOption) {
+    setSubscribingPackageId(pkg.id);
+    setCheckoutKind("package");
+    try {
+      const res = await subscribeToPackage(pkg.id);
+      setCheckoutUrl(res.authorizationUrl);
+    } catch (e) {
+      Alert.alert("Couldn't start checkout", e instanceof ApiError ? e.message : "Try again");
+      setSubscribingPackageId(null);
+    }
+  }
+
+  function onBuyPackageCash(pkg: PackageOption) {
+    Alert.alert(
+      "Pay with cash",
+      `You'll pay ${formatGHS(pkg.priceGHS)} for ${pkg.name} at the studio. A staff member will confirm it there, and your sessions go live right after.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Confirm",
+          onPress: async () => {
+            setSubscribingPackageId(pkg.id);
+            try {
+              await subscribeToPackageWithCash(pkg.id);
+              Alert.alert("Saved", "Show up at the studio and pay in person — staff will confirm it and your sessions will activate.");
+              setDetail(null);
+              await load();
+            } catch (e) {
+              Alert.alert("Couldn't save this", e instanceof ApiError ? e.message : "Try again");
+            } finally {
+              setSubscribingPackageId(null);
+            }
+          },
+        },
+      ],
+    );
+  }
+
+  async function onCheckoutClose(reference: string | null) {
+    const kind = checkoutKind;
+    setCheckoutUrl(null);
+    setCheckoutKind(null);
+    if (reference) {
+      try {
+        const { status } = await verifyPayment(reference);
+        if (status === "success") {
+          Alert.alert(
+            kind === "plan" ? "Plan renewed!" : "You're set!",
+            kind === "plan" ? "Your credits have been topped up." : "Your sessions are ready — go book a class.",
+          );
+          setDetail(null);
+        } else {
+          Alert.alert("Payment not completed", `Status: ${status}.`);
+        }
+      } catch {
+        Alert.alert("Couldn't confirm payment", "If you completed checkout, check back shortly.");
+      }
+    }
+    await load();
+    setRenewingPlan(false);
+    setSubscribingPackageId(null);
+  }
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
@@ -156,14 +315,16 @@ export default function HomeScreen() {
 
         {profile && (
           <Pressable
-            style={({ pressed }) => [styles.planCard, shadow.card, pressed && profile.plan && { opacity: 0.9 }]}
-            onPress={() => profile.plan && setDetail({ kind: "plan" })}
+            style={({ pressed }) => [styles.planCard, shadow.card, pressed && { opacity: 0.9 }]}
+            onPress={() => (profile.plan ? setDetail({ kind: "plan" }) : router.push("/plans"))}
           >
             <View style={styles.planCardRow}>
-              <Text style={styles.planName}>{profile.plan?.name ?? "No plan"}</Text>
-              <Ionicons name={profile.plan ? "chevron-forward" : "checkmark-circle"} size={20} color={colors.white} />
+              <Text style={styles.planName}>{profile.plan?.name ?? "No plan yet"}</Text>
+              <Ionicons name="chevron-forward" size={20} color={colors.white} />
             </View>
-            <Text style={styles.planCredits}>{profile.member.creditsLeft} classes left</Text>
+            <Text style={styles.planCredits}>
+              {profile.plan ? `${profile.member.creditsLeft} classes left` : "Tap to choose a plan"}
+            </Text>
             {profile.member.walletGHS > 0 && (
               <Text style={styles.planWallet}>Wallet · {formatGHS(profile.member.walletGHS)}</Text>
             )}
@@ -173,24 +334,57 @@ export default function HomeScreen() {
         {myPackages.length > 0 && (
           <>
             <Text style={styles.sectionTitle}>Your packages</Text>
-            {myPackages.map((pkg) => (
-              <Pressable
-                key={pkg.id}
-                style={({ pressed }) => [styles.card, shadow.card, pressed && { opacity: 0.85 }]}
-                onPress={() => setDetail({ kind: "package", pkg })}
-              >
-                <View style={styles.cardIconWrap}>
-                  <Ionicons name="pricetag" size={18} color={colors.green} />
-                </View>
-                <View style={styles.cardTextWrap}>
-                  <Text style={styles.cardLabel} numberOfLines={1}>{pkg.name}</Text>
-                  <Text style={styles.cardSub} numberOfLines={1}>
-                    {pkg.sessionsLeft} sessions left · expires {new Date(pkg.expiresAt).toLocaleDateString()}
-                  </Text>
-                </View>
-                <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+            <View style={styles.packageList}>
+              {myPackages.map((pkg) => (
+                <Pressable
+                  key={pkg.id}
+                  style={({ pressed }) => [styles.card, shadow.card, pressed && { opacity: 0.85 }]}
+                  onPress={() => setDetail({ kind: "myPackage", pkg })}
+                >
+                  <View style={styles.cardIconWrap}>
+                    <Ionicons name="pricetag" size={18} color={colors.green} />
+                  </View>
+                  <View style={styles.cardTextWrap}>
+                    <Text style={styles.cardLabel} numberOfLines={1}>{pkg.name}</Text>
+                    <Text style={styles.cardSub} numberOfLines={1}>
+                      {pkg.sessionsLeft} sessions left · expires {new Date(pkg.expiresAt).toLocaleDateString()}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+                </Pressable>
+              ))}
+            </View>
+          </>
+        )}
+
+        {availablePackages.length > 0 && (
+          <>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>Promotional packages</Text>
+              <Pressable onPress={() => router.push("/packages")} hitSlop={8}>
+                <Text style={styles.seeAllText}>See all</Text>
               </Pressable>
-            ))}
+            </View>
+            <View style={styles.packageList}>
+              {availablePackages.map((pkg) => (
+                <Pressable
+                  key={pkg.id}
+                  style={({ pressed }) => [styles.card, shadow.card, pressed && { opacity: 0.85 }]}
+                  onPress={() => setDetail({ kind: "promoPackage", pkg })}
+                >
+                  <View style={styles.cardIconWrap}>
+                    <Ionicons name="pricetag-outline" size={18} color={colors.green} />
+                  </View>
+                  <View style={styles.cardTextWrap}>
+                    <Text style={styles.cardLabel} numberOfLines={1}>{pkg.name}</Text>
+                    <Text style={styles.cardSub} numberOfLines={1}>
+                      {pkg.classTypeName} · {pkg.sessionsGranted} sessions · {formatGHS(pkg.priceGHS)}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+                </Pressable>
+              ))}
+            </View>
           </>
         )}
 
@@ -206,9 +400,33 @@ export default function HomeScreen() {
             ]}
             description={profile.plan.description}
             perks={profile.plan.perks}
-          />
+          >
+            <View style={styles.detailActionRow}>
+              <Pressable
+                style={({ pressed }) => [styles.detailButton, styles.detailButtonFlex, pressed && styles.detailButtonPressed]}
+                disabled={renewingPlan}
+                onPress={onRenewPlan}
+              >
+                {renewingPlan ? (
+                  <ActivityIndicator color={colors.white} />
+                ) : (
+                  <Text style={styles.detailButtonText}>Renew plan</Text>
+                )}
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [styles.detailSecondaryButton, styles.detailButtonFlex, pressed && styles.detailSecondaryPressed]}
+                disabled={renewingPlan}
+                onPress={onChangePlan}
+              >
+                <Text style={styles.detailSecondaryText}>Change plan</Text>
+              </Pressable>
+            </View>
+            <Pressable style={styles.detailCashButton} onPress={onRenewPlanCash} disabled={renewingPlan}>
+              <Text style={styles.detailCashText}>Pay with cash at the studio</Text>
+            </Pressable>
+          </DetailModal>
         )}
-        {detail?.kind === "package" && (
+        {detail?.kind === "myPackage" && (
           <DetailModal
             visible
             onClose={() => setDetail(null)}
@@ -219,8 +437,75 @@ export default function HomeScreen() {
             ]}
             description={detail.pkg.classTypeDescription}
             perks={detail.pkg.perks}
-          />
+          >
+            <Text style={styles.detailSectionLabel}>Book a class</Text>
+            {packageSessions.length === 0 ? (
+              <Text style={styles.detailEmptyText}>
+                No upcoming {detail.pkg.classTypeName} sessions right now — check Classes to see what&apos;s coming up.
+              </Text>
+            ) : (
+              packageSessions.map((s) => (
+                <Pressable
+                  key={s.id}
+                  style={({ pressed }) => [
+                    styles.sessionPickRow,
+                    { borderLeftColor: s.trainer.calendarColor },
+                    pressed && { opacity: 0.85 },
+                  ]}
+                  onPress={() => openSession(s)}
+                >
+                  <View style={styles.sessionPickTextWrap}>
+                    <Text style={styles.sessionPickTitle} numberOfLines={1}>
+                      {s.classType?.name ?? detail.pkg.classTypeName}
+                    </Text>
+                    <Text style={styles.sessionPickSub} numberOfLines={1}>
+                      {new Date(s.startsAt).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })}
+                      {" · "}
+                      {new Date(s.startsAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
+                      {" · "}
+                      {s.trainer.name}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+                </Pressable>
+              ))
+            )}
+          </DetailModal>
         )}
+        {detail?.kind === "promoPackage" && (
+          <DetailModal
+            visible
+            onClose={() => setDetail(null)}
+            title={detail.pkg.name}
+            price={formatGHS(detail.pkg.priceGHS)}
+            metaLines={[
+              `${detail.pkg.classTypeName}`,
+              `${detail.pkg.sessionsGranted} sessions · valid ${detail.pkg.validDays} days`,
+            ]}
+            description={detail.pkg.classTypeDescription}
+            perks={detail.pkg.perks}
+          >
+            <Pressable
+              style={({ pressed }) => [styles.detailButton, pressed && styles.detailButtonPressed]}
+              disabled={subscribingPackageId === detail.pkg.id}
+              onPress={() => onBuyPackage(detail.pkg)}
+            >
+              {subscribingPackageId === detail.pkg.id ? (
+                <ActivityIndicator color={colors.white} />
+              ) : (
+                <Text style={styles.detailButtonText}>Buy this package</Text>
+              )}
+            </Pressable>
+            <Pressable
+              style={styles.detailCashButton}
+              disabled={subscribingPackageId === detail.pkg.id}
+              onPress={() => onBuyPackageCash(detail.pkg)}
+            >
+              <Text style={styles.detailCashText}>Pay with cash at the studio</Text>
+            </Pressable>
+          </DetailModal>
+        )}
+        <CheckoutModal url={checkoutUrl} onClose={onCheckoutClose} />
 
         {progress && (
           <>
@@ -430,25 +715,31 @@ export default function HomeScreen() {
                 )}
               </View>
 
-              {contact.locations.map((loc) => (
-                <Pressable
-                  key={loc.id}
-                  style={styles.locationRow}
-                  disabled={!loc.phone}
-                  onPress={() => loc.phone && Linking.openURL(`tel:${loc.phone}`)}
-                >
-                  <View style={styles.locationTextWrap}>
-                    <Text style={styles.locationName}>{loc.name}</Text>
-                    {!!loc.address && <Text style={styles.locationAddress}>{loc.address}</Text>}
-                  </View>
-                  {!!loc.phone && (
-                    <View style={styles.locationCallWrap}>
-                      <Ionicons name="call-outline" size={14} color={colors.green} />
-                      <Text style={styles.locationPhone}>{loc.phone}</Text>
+              {contact.locations.map((loc) => {
+                const phones = loc.phone ? splitPhones(loc.phone) : [];
+                return (
+                  <View key={loc.id} style={styles.locationRow}>
+                    <View style={styles.locationTextWrap}>
+                      <Text style={styles.locationName}>{loc.name}</Text>
+                      {!!loc.address && <Text style={styles.locationAddress}>{loc.address}</Text>}
                     </View>
-                  )}
-                </Pressable>
-              ))}
+                    {phones.length > 0 && (
+                      <View style={styles.locationPhoneList}>
+                        {phones.map((phone) => (
+                          <Pressable
+                            key={phone}
+                            style={styles.locationCallWrap}
+                            onPress={() => Linking.openURL(`tel:${phone}`)}
+                          >
+                            <Ionicons name="call-outline" size={14} color={colors.green} />
+                            <Text style={styles.locationPhone}>{phone}</Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+                );
+              })}
             </View>
           </>
         )}
@@ -484,7 +775,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.green,
     borderRadius: radius.lg,
     padding: 20,
-    marginBottom: 24,
+    marginBottom: 28,
   },
   planCardRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   planName: { fontSize: 16, fontWeight: "700", color: colors.white, flexShrink: 1 },
@@ -613,17 +904,68 @@ const styles = StyleSheet.create({
   },
   helpButtonText: { fontSize: 13, fontWeight: "600", color: colors.greenDark },
   locationRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
     paddingVertical: 10,
     borderTopWidth: 1,
     borderTopColor: colors.border,
-    gap: 10,
+    gap: 8,
   },
   locationTextWrap: { flex: 1, minWidth: 0 },
   locationName: { fontSize: 14, fontWeight: "600", color: colors.text },
   locationAddress: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
-  locationCallWrap: { flexDirection: "row", alignItems: "center", gap: 4 },
+  locationPhoneList: { gap: 6 },
+  locationCallWrap: { flexDirection: "row", alignItems: "center", gap: 4, alignSelf: "flex-start" },
   locationPhone: { fontSize: 12, fontWeight: "600", color: colors.greenDark },
+  sectionHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  seeAllText: { fontSize: 13, fontWeight: "700", color: colors.greenDark },
+  packageList: { gap: 10, marginBottom: 24 },
+  detailActionRow: { flexDirection: "row", gap: 10, marginTop: 20 },
+  detailButtonFlex: { flex: 1, marginTop: 0 },
+  detailButton: {
+    backgroundColor: colors.green,
+    borderRadius: radius.sm,
+    paddingVertical: 12,
+    alignItems: "center",
+    marginTop: 20,
+  },
+  detailButtonPressed: { backgroundColor: colors.greenDark },
+  detailButtonText: { color: colors.white, fontWeight: "700" },
+  detailSecondaryButton: {
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  detailSecondaryPressed: { backgroundColor: colors.card },
+  detailSecondaryText: { color: colors.text, fontWeight: "700" },
+  detailCashButton: { alignItems: "center", paddingVertical: 10, marginTop: 6 },
+  detailCashText: { color: colors.textMuted, fontWeight: "600", fontSize: 13 },
+  detailSectionLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.textMuted,
+    marginTop: 20,
+    marginBottom: 8,
+    textTransform: "uppercase",
+  },
+  detailEmptyText: { fontSize: 13, color: colors.textMuted, lineHeight: 19 },
+  sessionPickRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.card,
+    borderRadius: radius.md,
+    borderLeftWidth: 4,
+    padding: 12,
+    marginTop: 8,
+    gap: 10,
+  },
+  sessionPickTextWrap: { flex: 1, minWidth: 0 },
+  sessionPickTitle: { fontSize: 14, fontWeight: "700", color: colors.text },
+  sessionPickSub: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
 });
