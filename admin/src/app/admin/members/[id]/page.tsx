@@ -31,7 +31,7 @@ export default async function MemberDetailPage({
   if (!member) notFound();
 
   return (
-    <main className="p-8">
+    <main className="p-4 sm:p-6 lg:p-8">
       <div className="flex items-center gap-4">
         {member.photoUrl ? (
           <img src={member.photoUrl} alt="" className="h-14 w-14 rounded-full object-cover" />
@@ -50,7 +50,7 @@ export default async function MemberDetailPage({
 
       <div className="mt-6 grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {[
               ["Plan", member.plan?.name ?? "—"],
               ["Status", member.status],
@@ -66,52 +66,56 @@ export default async function MemberDetailPage({
 
           <div className="rounded-2xl bg-white p-6 shadow-sm">
             <h2 className="text-sm font-medium text-stone-700">Booking history</h2>
-            <table className="mt-3 w-full text-left text-sm">
-              <thead className="text-xs text-stone-400">
-                <tr>
-                  <th className="py-1.5">Session</th>
-                  <th className="py-1.5">Trainer</th>
-                  <th className="py-1.5">Status</th>
-                  <th className="py-1.5">Paid</th>
-                </tr>
-              </thead>
-              <tbody>
-                {member.bookings.map((b) => (
-                  <tr key={b.id} className="border-t border-stone-100">
-                    <td className="py-2 text-stone-700">
-                      {b.session.classType?.name ?? "Private class"} · {b.session.startsAt.toISOString().slice(0, 16).replace("T", " ")}
-                    </td>
-                    <td className="py-2 text-stone-500">{b.session.trainer.user.name}</td>
-                    <td className="py-2">{b.status}</td>
-                    <td className="py-2 text-stone-500">
-                      {b.paidWith ?? "—"}{b.amountGHS > 0 && ` · ${formatGHS(b.amountGHS)}`}
-                    </td>
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="text-xs text-stone-400">
+                  <tr>
+                    <th className="py-1.5">Session</th>
+                    <th className="py-1.5">Trainer</th>
+                    <th className="py-1.5">Status</th>
+                    <th className="py-1.5">Paid</th>
                   </tr>
-                ))}
-                {member.bookings.length === 0 && (
-                  <tr><td colSpan={4} className="py-4 text-stone-400">No bookings.</td></tr>
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {member.bookings.map((b) => (
+                    <tr key={b.id} className="border-t border-stone-100">
+                      <td className="py-2 whitespace-nowrap text-stone-700">
+                        {b.session.classType?.name ?? "Private class"} · {b.session.startsAt.toISOString().slice(0, 16).replace("T", " ")}
+                      </td>
+                      <td className="py-2 whitespace-nowrap text-stone-500">{b.session.trainer.user.name}</td>
+                      <td className="py-2 whitespace-nowrap">{b.status}</td>
+                      <td className="py-2 whitespace-nowrap text-stone-500">
+                        {b.paidWith ?? "—"}{b.amountGHS > 0 && ` · ${formatGHS(b.amountGHS)}`}
+                      </td>
+                    </tr>
+                  ))}
+                  {member.bookings.length === 0 && (
+                    <tr><td colSpan={4} className="py-4 text-stone-400">No bookings.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
 
           <div className="rounded-2xl bg-white p-6 shadow-sm">
             <h2 className="text-sm font-medium text-stone-700">Payments</h2>
-            <table className="mt-3 w-full text-left text-sm">
-              <tbody>
-                {member.payments.map((p) => (
-                  <tr key={p.id} className="border-t border-stone-100">
-                    <td className="py-2 text-stone-700">{p.description || p.method}</td>
-                    <td className="py-2 text-stone-500">{p.method} · {p.status}</td>
-                    <td className="py-2 text-right font-medium text-stone-800">{formatGHS(p.amountGHS)}</td>
-                    <td className="py-2 pl-4 text-stone-400">{p.createdAt.toISOString().slice(0, 10)}</td>
-                  </tr>
-                ))}
-                {member.payments.length === 0 && (
-                  <tr><td className="py-4 text-stone-400">No payments.</td></tr>
-                )}
-              </tbody>
-            </table>
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <tbody>
+                  {member.payments.map((p) => (
+                    <tr key={p.id} className="border-t border-stone-100">
+                      <td className="py-2 whitespace-nowrap text-stone-700">{p.description || p.method}</td>
+                      <td className="py-2 whitespace-nowrap text-stone-500">{p.method} · {p.status}</td>
+                      <td className="py-2 whitespace-nowrap text-right font-medium text-stone-800">{formatGHS(p.amountGHS)}</td>
+                      <td className="py-2 pl-4 whitespace-nowrap text-stone-400">{p.createdAt.toISOString().slice(0, 10)}</td>
+                    </tr>
+                  ))}
+                  {member.payments.length === 0 && (
+                    <tr><td className="py-4 text-stone-400">No payments.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
 

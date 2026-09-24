@@ -50,40 +50,42 @@ export default async function ReportsPage() {
   const noShowRate = attended + noShow > 0 ? Math.round((noShow / (attended + noShow)) * 100) : 0;
 
   return (
-    <main className="p-8">
+    <main className="p-4 sm:p-6 lg:p-8">
       <h1 className="text-2xl font-semibold text-stone-900">Reports</h1>
       <p className="mt-1 text-sm text-stone-500">Last 30 days</p>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
         <div className="rounded-2xl bg-white p-6 shadow-sm">
           <h2 className="text-sm font-medium text-stone-700">Attendance by class type</h2>
-          <table className="mt-3 w-full text-left text-sm">
-            <thead className="text-xs text-stone-400">
-              <tr>
-                <th className="py-1.5">Class</th>
-                <th className="py-1.5 text-right">Bookings</th>
-                <th className="py-1.5 text-right">Attended</th>
-                <th className="py-1.5 text-right">No-shows</th>
-                <th className="py-1.5 text-right">Rate</th>
-              </tr>
-            </thead>
-            <tbody>
-              {byClassType.map((c) => {
-                const total = Number(c.attended) + Number(c.noshow);
-                return (
-                  <tr key={c.name} className="border-t border-stone-100">
-                    <td className="py-2 text-stone-800">{c.name}</td>
-                    <td className="py-2 text-right text-stone-600">{Number(c.booked)}</td>
-                    <td className="py-2 text-right text-stone-600">{Number(c.attended)}</td>
-                    <td className="py-2 text-right text-stone-600">{Number(c.noshow)}</td>
-                    <td className="py-2 text-right font-medium text-stone-900">
-                      {total > 0 ? `${Math.round((Number(c.attended) / total) * 100)}%` : "—"}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="text-xs text-stone-400">
+                <tr>
+                  <th className="py-1.5 whitespace-nowrap">Class</th>
+                  <th className="py-1.5 text-right whitespace-nowrap">Bookings</th>
+                  <th className="py-1.5 text-right whitespace-nowrap">Attended</th>
+                  <th className="py-1.5 text-right whitespace-nowrap">No-shows</th>
+                  <th className="py-1.5 text-right whitespace-nowrap">Rate</th>
+                </tr>
+              </thead>
+              <tbody>
+                {byClassType.map((c) => {
+                  const total = Number(c.attended) + Number(c.noshow);
+                  return (
+                    <tr key={c.name} className="border-t border-stone-100">
+                      <td className="py-2 whitespace-nowrap text-stone-800">{c.name}</td>
+                      <td className="py-2 text-right whitespace-nowrap text-stone-600">{Number(c.booked)}</td>
+                      <td className="py-2 text-right whitespace-nowrap text-stone-600">{Number(c.attended)}</td>
+                      <td className="py-2 text-right whitespace-nowrap text-stone-600">{Number(c.noshow)}</td>
+                      <td className="py-2 text-right whitespace-nowrap font-medium text-stone-900">
+                        {total > 0 ? `${Math.round((Number(c.attended) / total) * 100)}%` : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
           <p className="mt-4 border-t border-stone-100 pt-3 text-sm text-stone-600">
             Overall no-show rate: <span className="font-semibold text-stone-900">{noShowRate}%</span>
           </p>

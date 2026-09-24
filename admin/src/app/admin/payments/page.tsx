@@ -41,7 +41,7 @@ export default async function PaymentsPage({
   ]);
 
   return (
-    <main className="p-8">
+    <main className="p-4 sm:p-6 lg:p-8">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold text-stone-900">Payments</h1>
         <RecordPaymentButton

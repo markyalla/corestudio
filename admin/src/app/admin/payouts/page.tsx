@@ -22,7 +22,7 @@ export default async function PayoutsPage() {
   ]);
 
   return (
-    <main className="p-8">
+    <main className="p-4 sm:p-6 lg:p-8">
       <h1 className="text-2xl font-semibold text-stone-900">Payouts</h1>
 
       <h2 className="mt-6 text-sm font-medium text-stone-700">Currently owing</h2>

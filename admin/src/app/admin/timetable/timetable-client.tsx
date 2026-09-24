@@ -233,19 +233,21 @@ export function TimetableClient(props: {
       )}
 
       {view === "week" && (
-        <div className="mt-4 grid grid-cols-7 gap-2">
-          {Array.from({ length: 7 }, (_, i) => addDaysUTC(gridStart, i)).map((d, i) => (
-            <div key={ymd(d)} className="min-h-[60vh] rounded-xl bg-white p-2 shadow-sm">
-              <a href={href("day", d)} className={`mb-2 block text-center text-xs font-medium ${ymd(d) === todayStr ? "text-stone-900" : "text-stone-500"}`}>
-                {DAYS[i]} {d.getUTCDate()}
-              </a>
-              <div className="space-y-1.5">
-                {sessionsOn(d).map((s) => (
-                  <SessionChip key={s.id} s={s} onClick={() => setOpenSession(s)} />
-                ))}
+        <div className="mt-4 overflow-x-auto">
+          <div className="grid min-w-[840px] grid-cols-7 gap-2">
+            {Array.from({ length: 7 }, (_, i) => addDaysUTC(gridStart, i)).map((d, i) => (
+              <div key={ymd(d)} className="min-h-[60vh] rounded-xl bg-white p-2 shadow-sm">
+                <a href={href("day", d)} className={`mb-2 block text-center text-xs font-medium ${ymd(d) === todayStr ? "text-stone-900" : "text-stone-500"}`}>
+                  {DAYS[i]} {d.getUTCDate()}
+                </a>
+                <div className="space-y-1.5">
+                  {sessionsOn(d).map((s) => (
+                    <SessionChip key={s.id} s={s} onClick={() => setOpenSession(s)} />
+                  ))}
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       )}
 

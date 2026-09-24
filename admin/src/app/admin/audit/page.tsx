@@ -74,7 +74,7 @@ export default async function AuditLogPage({
   });
 
   return (
-    <main className="p-8">
+    <main className="p-4 sm:p-6 lg:p-8">
       <h1 className="text-2xl font-semibold text-stone-900">Audit Log</h1>
       <p className="mt-1 text-sm text-stone-500">
         {isAdmin

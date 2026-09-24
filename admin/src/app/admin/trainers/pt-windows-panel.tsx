@@ -98,28 +98,30 @@ export function PtWindowsPanel({
       ) : windows.length === 0 ? (
         <p className="text-xs text-stone-400">No private-class windows yet.</p>
       ) : (
-        <table className="w-full text-left text-xs">
-          <tbody>
-            {windows.map((w) => (
-              <tr key={w.id} className="border-t border-stone-100">
-                <td className="py-1.5 font-medium text-stone-700">{DAYS[w.dayOfWeek]}</td>
-                <td className="py-1.5 text-stone-600">{w.startTime}–{w.endTime}</td>
-                <td className="py-1.5 text-stone-600">{w.locationName}</td>
-                <td className="py-1.5 text-stone-500">{w.durationMins}m</td>
-                <td className="py-1.5 text-stone-600">{formatGHS(w.priceGHS)}</td>
-                <td className="py-1.5 text-stone-500">{w.title}</td>
-                <td className="py-1.5 text-right">
-                  <button
-                    onClick={() => patch(w.id, { active: !w.active })}
-                    className={`rounded-full px-2 py-0.5 ${w.active ? "bg-emerald-50 text-emerald-700" : "bg-stone-100 text-stone-500"}`}
-                  >
-                    {w.active ? "Active" : "Off"}
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <tbody>
+              {windows.map((w) => (
+                <tr key={w.id} className="border-t border-stone-100">
+                  <td className="py-1.5 font-medium whitespace-nowrap text-stone-700">{DAYS[w.dayOfWeek]}</td>
+                  <td className="py-1.5 whitespace-nowrap text-stone-600">{w.startTime}–{w.endTime}</td>
+                  <td className="py-1.5 whitespace-nowrap text-stone-600">{w.locationName}</td>
+                  <td className="py-1.5 whitespace-nowrap text-stone-500">{w.durationMins}m</td>
+                  <td className="py-1.5 whitespace-nowrap text-stone-600">{formatGHS(w.priceGHS)}</td>
+                  <td className="py-1.5 whitespace-nowrap text-stone-500">{w.title}</td>
+                  <td className="py-1.5 text-right whitespace-nowrap">
+                    <button
+                      onClick={() => patch(w.id, { active: !w.active })}
+                      className={`rounded-full px-2 py-0.5 ${w.active ? "bg-emerald-50 text-emerald-700" : "bg-stone-100 text-stone-500"}`}
+                    >
+                      {w.active ? "Active" : "Off"}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
       <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-stone-100 pt-3">

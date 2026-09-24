@@ -23,7 +23,7 @@ export default async function TrainerRequestsInboxPage() {
   });
 
   return (
-    <main className="p-8">
+    <main className="p-4 sm:p-6 lg:p-8">
       <h1 className="text-2xl font-semibold text-stone-900">Trainer requests</h1>
       <p className="mt-1 text-sm text-stone-500">
         Cancellation requests and unavailability heads-up from trainers. Cancelling a class here

@@ -38,7 +38,7 @@ export default async function TaxPage() {
   ];
 
   return (
-    <main className="p-8">
+    <main className="p-4 sm:p-6 lg:p-8">
       <h1 className="text-2xl font-semibold text-stone-900">Tax & Social Security</h1>
 
       <div className="mt-6 grid grid-cols-3 gap-4">

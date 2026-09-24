@@ -39,7 +39,7 @@ export default async function TrainerRequestsPage() {
   ]);
 
   return (
-    <main className="max-w-2xl p-8">
+    <main className="max-w-2xl p-4 sm:p-6 lg:p-8">
       <h1 className="text-2xl font-semibold text-stone-900">Requests</h1>
       <p className="mt-1 text-sm text-stone-500">
         Your calendar is set by staff — if a class needs to be cancelled, or you won&apos;t be

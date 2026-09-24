@@ -47,7 +47,7 @@ export default async function BookingsPage({
   });
 
   return (
-    <main className="p-8">
+    <main className="p-4 sm:p-6 lg:p-8">
       <h1 className="text-2xl font-semibold text-stone-900">Bookings</h1>
 
       <form className="mt-4 flex flex-wrap items-end gap-3 text-sm" method="GET">

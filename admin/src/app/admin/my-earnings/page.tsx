@@ -27,7 +27,7 @@ export default async function MyEarningsPage() {
   const owed = owedAll.find((o) => o.trainerId === trainer.id);
 
   return (
-    <main className="p-8">
+    <main className="p-4 sm:p-6 lg:p-8">
       <h1 className="text-2xl font-semibold text-stone-900">My earnings</h1>
       <div className="mt-6 grid max-w-lg grid-cols-2 gap-4">
         <div className="rounded-2xl bg-white p-5 shadow-sm">
