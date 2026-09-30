@@ -44,7 +44,7 @@ export async function bookSessionCash(opts: {
 
     const member = await tx.member.findUnique({ where: { id: opts.memberId } });
     if (!member) throw new ApiError(404, "Member not found");
-    if (member.status === "FROZEN") throw new ApiError(400, "Membership is frozen — renew to book");
+    if (member.status === "FROZEN") throw new ApiError(400, "Membership is frozen — contact the studio");
     if (member.status === "CANCELLED") throw new ApiError(400, "Membership is cancelled");
 
     const existing = await tx.booking.findFirst({
@@ -139,7 +139,7 @@ export async function bookSession(opts: {
       include: { user: true },
     });
     if (!member) throw new ApiError(404, "Member not found");
-    if (member.status === "FROZEN") throw new ApiError(400, "Membership is frozen — renew to book");
+    if (member.status === "FROZEN") throw new ApiError(400, "Membership is frozen — contact the studio");
     if (member.status === "CANCELLED") throw new ApiError(400, "Membership is cancelled");
 
     const existing = await tx.booking.findFirst({
@@ -179,7 +179,7 @@ export async function bookSession(opts: {
       const pkg = await tx.memberPackage.findFirst({
         where: {
           memberId: member.id,
-          package: { classTypeId: session.classTypeId },
+          package: { classTypes: { some: { id: session.classTypeId } } },
           sessionsLeft: { gt: 0 },
           expiresAt: { gt: new Date() },
         },
@@ -188,12 +188,6 @@ export async function bookSession(opts: {
       if (!pkg) throw new ApiError(400, "No package sessions left for this class");
       await tx.memberPackage.update({ where: { id: pkg.id }, data: { sessionsLeft: { decrement: 1 } } });
       memberPackageId = pkg.id;
-    } else if (paidWith === "CREDIT") {
-      if (member.creditsLeft <= 0) throw new ApiError(400, "No credits left on plan");
-      await tx.member.update({
-        where: { id: member.id },
-        data: { creditsLeft: { decrement: 1 } },
-      });
     } else if (paidWith === "COMP") {
       amountGHS = 0;
     } else {
@@ -289,11 +283,6 @@ export async function cancelBooking(opts: {
           where: { id: booking.memberPackageId },
           data: { sessionsLeft: { increment: 1 } },
         });
-      } else if (booking.paidWith === "CREDIT") {
-        await tx.member.update({
-          where: { id: booking.memberId },
-          data: { creditsLeft: { increment: 1 } },
-        });
       } else if (booking.amountGHS > 0) {
         await tx.member.update({
           where: { id: booking.memberId },
@@ -324,10 +313,9 @@ export async function cancelBooking(opts: {
 }
 
 /**
- * Business rule 3. Promotes the oldest WAITLIST booking on a session.
- * - Member has credits → consume one, promote to BOOKED, SMS confirmation.
- * - Otherwise → set a 2-hour payment window (promotionExpiresAt) and SMS a
- *   payment link. The expiry cron (Phase 6) promotes the next member if unpaid.
+ * Business rule 3. Promotes the oldest WAITLIST booking on a session: sets a
+ * 2-hour payment window (promotionExpiresAt) and SMS a payment link. The
+ * expiry cron (Phase 6) promotes the next member if unpaid.
  */
 export async function promoteWaitlist(sessionId: string): Promise<void> {
   const sms = getNotificationService();
@@ -356,29 +344,8 @@ export async function promoteWaitlist(sessionId: string): Promise<void> {
     const when = session.startsAt.toISOString().slice(0, 16).replace("T", " ");
     const className = session.classType?.name ?? "Private class session";
 
-    if (next.member.creditsLeft > 0) {
-      await tx.member.update({
-        where: { id: next.memberId },
-        data: { creditsLeft: { decrement: 1 } },
-      });
-      const booking = await tx.booking.update({
-        where: { id: next.id },
-        data: { status: "BOOKED", paidWith: "CREDIT", amountGHS: 0 },
-      });
-      await audit(tx, {
-        userId: null,
-        action: "booking.waitlist_promote",
-        entity: "Booking",
-        entityId: booking.id,
-        payload: { via: "CREDIT" },
-      });
-      return {
-        phone: next.member.user.phone,
-        message: `A spot opened up in ${className} on ${when} — you're booked in! (1 credit used)`,
-      };
-    }
-
-    // No credits: open a 2-hour payment window
+    // Open a 2-hour payment window rather than auto-booking — the member
+    // still has to pay for the spot.
     const expires = new Date(Date.now() + 2 * 60 * 60 * 1000);
     await tx.booking.update({
       where: { id: next.id },
@@ -452,12 +419,11 @@ export async function markNoShow(opts: { bookingId: string; actorUserId: string 
 
 /**
  * Cancels a whole session: releases every active booking and notifies
- * members by SMS. Staff choose how paid bookings are made whole:
- * - REFUND (default): cash/wallet payments go back to the wallet, credit
- *   payments return the credit — the original behaviour.
- * - RESCHEDULE: no cash moves; paid bookings get a class credit instead so
- *   the member books another time for the same kind of class.
- * Staff only.
+ * members by SMS. A package session is always given back to the package
+ * regardless of mode. For any other paid booking, both modes credit the
+ * wallet for what was paid — REFUND frames it to the member as money back,
+ * RESCHEDULE frames it as a credit to book another time; mechanically
+ * identical, just different member-facing wording. Staff only.
  */
 export async function cancelSession(opts: {
   sessionId: string;
@@ -495,14 +461,8 @@ export async function cancelSession(opts: {
         // regardless of REFUND vs RESCHEDULE mode.
         if (b.paidWith === "PACKAGE" && b.memberPackageId) {
           await tx.memberPackage.update({ where: { id: b.memberPackageId }, data: { sessionsLeft: { increment: 1 } } });
-        } else if (mode === "REFUND") {
-          if (b.paidWith === "CREDIT") {
-            await tx.member.update({ where: { id: b.memberId }, data: { creditsLeft: { increment: 1 } } });
-          } else if (b.amountGHS > 0) {
-            await tx.member.update({ where: { id: b.memberId }, data: { walletGHS: { increment: b.amountGHS } } });
-          }
-        } else if (b.paidWith === "CREDIT" || b.amountGHS > 0) {
-          await tx.member.update({ where: { id: b.memberId }, data: { creditsLeft: { increment: 1 } } });
+        } else if (b.amountGHS > 0) {
+          await tx.member.update({ where: { id: b.memberId }, data: { walletGHS: { increment: b.amountGHS } } });
         }
       }
       await tx.booking.update({ where: { id: b.id }, data: { status: "CANCELLED", cancelReason } });
@@ -513,15 +473,11 @@ export async function cancelSession(opts: {
             ? `${className} on ${when} was cancelled.`
             : b.paidWith === "PACKAGE"
               ? `${className} on ${when} was cancelled. Your session has been added back to your package — book another time.`
-              : mode === "REFUND"
-                ? b.paidWith === "CREDIT"
-                  ? `${className} on ${when} was cancelled. Your credit has been refunded.`
-                  : b.amountGHS > 0
-                    ? `${className} on ${when} was cancelled. ${formatGHS(b.amountGHS)} was added to your wallet.`
-                    : `${className} on ${when} was cancelled.`
-                : b.paidWith === "CREDIT" || b.amountGHS > 0
-                  ? `${className} on ${when} was cancelled. We've added a free class credit to your account — use it to book another time.`
-                  : `${className} on ${when} was cancelled. We'll help you find another time to reschedule.`,
+              : b.amountGHS === 0
+                ? `${className} on ${when} was cancelled.`
+                : mode === "REFUND"
+                  ? `${className} on ${when} was cancelled. ${formatGHS(b.amountGHS)} was added to your wallet.`
+                  : `${className} on ${when} was cancelled. ${formatGHS(b.amountGHS)} was added to your wallet — use it to book another time.`,
       });
     }
 

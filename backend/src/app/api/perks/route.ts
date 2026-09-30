@@ -51,7 +51,7 @@ export const DELETE = apiHandler(async (req: Request) => {
         await tx.perkItem.delete({ where: { id } });
         await audit(tx, { userId: session.user.id, action: "perk.delete", entity: "PerkItem", entityId: id, payload: {} });
       }),
-    "Can't delete — this perk is still used by a membership plan.",
+    "Can't delete — this perk is still used by a package.",
   );
   return NextResponse.json({ ok: true });
 });

@@ -31,23 +31,12 @@ interface ProfileResponse {
   member: {
     id: string;
     status: string;
-    creditsLeft: number;
     walletGHS: number;
-    cycleRenewsAt: string | null;
     joinedAt: string;
     photoUrl: string | null;
     location: { id: string; name: string } | null;
   };
   user: { name: string; email: string; phone: string | null };
-  plan: {
-    name: string;
-    priceGHS: number;
-    classesPerCycle: number;
-    bonusCredits: number;
-    cycleDays: number;
-    description: string;
-    perks: string[];
-  } | null;
   payments: PaymentItem[];
 }
 
@@ -279,7 +268,7 @@ export default function ProfileScreen() {
                   <Text style={styles.locationHint}>
                     {profile.member.location
                       ? "Classes you see are for this studio"
-                      : "Pick your studio before choosing a plan"}
+                      : "Pick your studio before booking a class"}
                   </Text>
                 </View>
                 <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />

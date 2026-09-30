@@ -52,6 +52,9 @@ enum BookingStatus {
 }
 
 enum PaymentMethod {
+  // Legacy — plans (and the credits they funded) were removed; kept only so
+  // historical Booking rows written before the removal still deserialize.
+  // No code path creates a CREDIT booking anymore.
   CREDIT
   MOMO
   CARD
@@ -141,48 +144,26 @@ model OtpCode {
   @@index([phone, purpose])
 }
 
-model MembershipPlan {
-  id              String  @id @default(cuid())
-  name            String
-  priceGHS        Int // pesewas
-  classesPerCycle Int // base classes granted per cycle
-  bonusCredits    Int     @default(0) // extra free classes on top of classesPerCycle
-  cycleDays       Int     @default(30)
-  description     String  @default("")
-  active          Boolean @default(true)
-
-  members  Member[]
-  payments Payment[]
-  perks    PerkItem[] @relation("PlanPerks")
-}
-
 model PerkItem {
   id     String  @id @default(cuid())
   name   String
   active Boolean @default(true)
 
-  plans    MembershipPlan[] @relation("PlanPerks")
-  packages Package[]        @relation("PackagePerks")
+  packages Package[] @relation("PackagePerks")
 }
 
 model Member {
   id            String       @id @default(cuid())
   userId        String       @unique
-  planId        String?
   // The studio location this member attends. Must be set before they can
-  // subscribe to a plan; also filters the sessions they see in the app.
+  // subscribe to a package; also filters the sessions they see in the app.
   preferredLocationId String?
   status        MemberStatus @default(ACTIVE)
-  creditsLeft   Int          @default(0)
   walletGHS     Int          @default(0) // pesewas
   photoUrl      String? // set via PATCH /api/app/profile, served from /api/media/**
-  cycleRenewsAt DateTime?
-  // Renewal reminder dedupe (rule 7)
-  renewalReminderAt DateTime?
   joinedAt      DateTime     @default(now())
 
   user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  plan     MembershipPlan? @relation(fields: [planId], references: [id])
   preferredLocation Location? @relation("MemberPreferredLocation", fields: [preferredLocationId], references: [id])
   bookings Booking[]
   payments Payment[]
@@ -303,28 +284,30 @@ model ClassType {
 
   sessions        Session[]
   recurrenceRules RecurrenceRule[]
-  packages        Package[]
+  packages        Package[]        @relation("PackageClassTypes")
   defaultTrainer  Trainer?         @relation(fields: [defaultTrainerId], references: [id])
 }
 
-// A one-time, non-renewing bundle of sessions for one specific ClassType —
-// e.g. "Thai Massage 90min — Buy 7 Get 1" (8 sessions, expires in 90 days).
-// Unlike MembershipPlan (recurring, auto-renews, freezes the member if
-// unpaid), a Package is bought once and just runs out or expires, whichever
-// comes first. Booking against it only pays for sessions of its classType —
-// this is also how a trainer-specific plan like "Pilates (Maryam)" enforces
-// that its sessions can only be spent with Maryam: the ClassType itself is
-// named/scoped to that trainer (see ClassType).
+// A one-time, non-renewing bundle of sessions covering one or more
+// ClassTypes — e.g. "Thai Massage 90min — Buy 7 Get 1" (8 sessions, expires
+// in 90 days), or a multi-class bundle spanning several services. Unlike
+// MembershipPlan (recurring, auto-renews, freezes the member if unpaid), a
+// Package is bought once and just runs out or expires, whichever comes
+// first. The sessionsGranted pool is shared across every ClassType the
+// package covers — booking against it draws from that same pool as long as
+// the session's classType is one of them. A trainer-specific service like
+// "Pilates (Maryam)" still enforces that its sessions can only be spent
+// with Maryam, since the ClassType itself is named/scoped to that trainer
+// (see ClassType) — a package just decides which such ClassTypes it unlocks.
 model Package {
   id            String  @id @default(cuid())
   name          String
-  classTypeId   String
   sessionsGranted Int // total sessions, including any free ones
   priceGHS      Int // pesewas
   validDays     Int // member's copy expires this many days after purchase
   active        Boolean @default(true)
 
-  classType      ClassType       @relation(fields: [classTypeId], references: [id])
+  classTypes     ClassType[]     @relation("PackageClassTypes")
   memberPackages MemberPackage[]
   payments       Payment[]
   perks          PerkItem[]      @relation("PackagePerks")
@@ -436,11 +419,7 @@ model Payment {
   description String        @default("")
   paystackRef String?       @unique
   status      PaymentStatus @default(PENDING)
-  // Set when this payment is for a plan subscription/switch/renewal paid in
-  // cash — lets staff confirming it in the admin portal know which plan to
-  // activate, without parsing the description string.
-  planId      String?
-  // Same idea as planId, for a cash Package purchase — tells staff
+  // Set when this payment is for a cash Package purchase — tells staff
   // confirming the cash payment which Package to grant.
   packageId   String?
   // Same idea again, for a cash class/session booking (bookSessionCash) —
@@ -450,10 +429,9 @@ model Payment {
   bookingId   String?       @unique
   createdAt   DateTime      @default(now())
 
-  member  Member          @relation(fields: [memberId], references: [id])
-  plan    MembershipPlan? @relation(fields: [planId], references: [id])
-  pkg     Package?        @relation(fields: [packageId], references: [id])
-  booking Booking?        @relation(fields: [bookingId], references: [id])
+  member  Member   @relation(fields: [memberId], references: [id])
+  pkg     Package? @relation(fields: [packageId], references: [id])
+  booking Booking? @relation(fields: [bookingId], references: [id])
 
   @@index([memberId, status])
 }

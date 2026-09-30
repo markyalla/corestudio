@@ -17,16 +17,12 @@ type Studio = {
   socialSecurityPercent: number;
 };
 type Perk = { id: string; name: string; active: boolean };
-type Plan = {
-  id: string; name: string; priceGHS: number; classesPerCycle: number; bonusCredits: number;
-  cycleDays: number; description: string; active: boolean; perks: Perk[];
-};
 type ClassType = {
   id: string; name: string; durationMins: number; priceGHS: number;
   defaultCapacity: number; description: string; active: boolean;
 };
 type Package = {
-  id: string; name: string; classTypeId: string; classType: { name: string };
+  id: string; name: string; classTypes: { id: string; name: string }[];
   sessionsGranted: number; priceGHS: number; validDays: number; active: boolean; perks: Perk[];
 };
 type Location = { id: string; name: string; address: string; phone: string; active: boolean };
@@ -93,7 +89,7 @@ function ImagePicker({ value, onChange }: { value: string | null; onChange: (dat
 
 /** Confirm-then-delete button shared by every settings list section. Backend
  *  DELETE routes reject with a friendly 409 if the item is still referenced
- *  elsewhere (e.g. a plan with members on it) — that message surfaces via onRun. */
+ *  elsewhere (e.g. a package members still hold) — that message surfaces via onRun. */
 function DeleteButton({ path, id, label, onRun }: {
   path: string; id: string; label: string;
   onRun: (a: () => Promise<string | null>, ok: string) => void;
@@ -115,7 +111,6 @@ export function SettingsClient(props: {
   isOwner: boolean;
   isAdmin: boolean;
   studio: Studio;
-  plans: Plan[];
   classTypes: ClassType[];
   packages: Package[];
   locations: Location[];
@@ -144,7 +139,6 @@ export function SettingsClient(props: {
       <MotivationSection messages={props.motivationMessages} onRun={run} />
       {props.isOwner && <BroadcastNumbersSection />}
       <PerksSection perks={props.perks} onRun={run} />
-      <PlansSection plans={props.plans} perks={props.perks} onRun={run} />
       <ClassTypesSection classTypes={props.classTypes} onRun={run} />
       <PackagesSection packages={props.packages} classTypes={props.classTypes} perks={props.perks} onRun={run} />
       <LocationsSection locations={props.locations} onRun={run} />
@@ -203,175 +197,12 @@ function StudioSection({ studio, onRun }: { studio: Studio; onRun: (a: () => Pro
   );
 }
 
-function PlansSection({ plans, perks, onRun }: { plans: Plan[]; perks: Perk[]; onRun: (a: () => Promise<string | null>, ok: string) => Promise<string | null> }) {
-  const [form, setForm] = useState({ name: "", price: "", classes: "", bonus: "0", cycleDays: "30", description: "", perkIds: [] as string[] });
-  const [editingId, setEditingId] = useState<string | null>(null);
-
-  function togglePerk(list: string[], id: string): string[] {
-    return list.includes(id) ? list.filter((p) => p !== id) : [...list, id];
-  }
-
-  return (
-    <section className="rounded-2xl bg-white p-6 shadow-sm">
-      <h2 className="text-sm font-medium text-stone-700">Membership plans</h2>
-      <div className="mt-3 divide-y divide-stone-100">
-        {plans.map((p) => (
-          <div key={p.id} className="py-2 text-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium text-stone-800">{p.name}</p>
-                <p className="text-stone-600">
-                  {formatGHS(p.priceGHS)} · {p.classesPerCycle} classes + {p.bonusCredits} bonus / {p.cycleDays}d
-                  {p.perks.length > 0 && ` · ${p.perks.map((pk) => pk.name).join(", ")}`}
-                </p>
-                {p.description ? (
-                  <p className="mt-0.5 truncate text-xs text-stone-400">{p.description}</p>
-                ) : (
-                  <p className="mt-0.5 text-xs text-amber-600">No description yet</p>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => onRun(() => api("/api/plans", "PATCH", { id: p.id, active: !p.active }), "Plan updated.")}
-                  className={`rounded-full px-3 py-1 text-xs ${p.active ? "bg-emerald-50 text-emerald-700" : "bg-stone-100 text-stone-500"}`}
-                >
-                  {p.active ? "Active" : "Inactive"}
-                </button>
-                <button
-                  onClick={() => setEditingId(editingId === p.id ? null : p.id)}
-                  className="rounded-lg border border-stone-300 px-3 py-1 text-xs text-stone-600"
-                >
-                  {editingId === p.id ? "Close" : "Edit"}
-                </button>
-                <DeleteButton path="/api/plans" id={p.id} label={p.name} onRun={onRun} />
-              </div>
-            </div>
-            {editingId === p.id && (
-              <PlanEditRow plan={p} perks={perks} onRun={onRun} onDone={() => setEditingId(null)} />
-            )}
-          </div>
-        ))}
-      </div>
-      <div className="mt-3 flex flex-wrap items-start gap-2 border-t border-stone-100 pt-3">
-        <input placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className={input} />
-        <input placeholder="Price GHS" type="number" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} className={`w-28 ${input}`} />
-        <input placeholder="Classes/cycle" type="number" value={form.classes} onChange={(e) => setForm({ ...form, classes: e.target.value })} className={`w-32 ${input}`} />
-        <input placeholder="Bonus classes" type="number" value={form.bonus} onChange={(e) => setForm({ ...form, bonus: e.target.value })} className={`w-28 ${input}`} />
-        <input placeholder="Cycle days" type="number" value={form.cycleDays} onChange={(e) => setForm({ ...form, cycleDays: e.target.value })} className={`w-28 ${input}`} />
-        <textarea
-          placeholder="Description — what members get, who it's for"
-          value={form.description}
-          onChange={(e) => setForm({ ...form, description: e.target.value })}
-          rows={2}
-          className={`w-full ${input}`}
-        />
-        <div className="flex flex-wrap gap-2">
-          {perks.map((perk) => (
-            <label key={perk.id} className="flex items-center gap-1 rounded-lg border border-stone-300 px-2 py-1 text-xs">
-              <input
-                type="checkbox"
-                checked={form.perkIds.includes(perk.id)}
-                onChange={() => setForm({ ...form, perkIds: togglePerk(form.perkIds, perk.id) })}
-              />
-              {perk.name}
-            </label>
-          ))}
-        </div>
-        <button
-          disabled={!form.name || !form.price || !form.classes}
-          className={btn}
-          onClick={() =>
-            onRun(
-              () =>
-                api("/api/plans", "POST", {
-                  name: form.name,
-                  priceGHS: parseGHS(form.price),
-                  classesPerCycle: Number(form.classes),
-                  bonusCredits: Number(form.bonus || "0"),
-                  cycleDays: Number(form.cycleDays),
-                  description: form.description,
-                  perkIds: form.perkIds,
-                }),
-              "Plan created.",
-            ).then((err) => {
-              if (!err) setForm({ name: "", price: "", classes: "", bonus: "0", cycleDays: "30", description: "", perkIds: [] });
-            })
-          }
-        >
-          Add
-        </button>
-      </div>
-    </section>
-  );
-}
-
-function PlanEditRow({ plan, perks, onRun, onDone }: {
-  plan: Plan; perks: Perk[]; onRun: (a: () => Promise<string | null>, ok: string) => Promise<string | null>; onDone: () => void;
-}) {
-  const [classes, setClasses] = useState(String(plan.classesPerCycle));
-  const [bonus, setBonus] = useState(String(plan.bonusCredits));
-  const [description, setDescription] = useState(plan.description);
-  const [perkIds, setPerkIds] = useState(plan.perks.map((p) => p.id));
-
-  function togglePerk(id: string) {
-    setPerkIds((list) => (list.includes(id) ? list.filter((p) => p !== id) : [...list, id]));
-  }
-
-  return (
-    <div className="mt-2 flex flex-wrap items-start gap-2 rounded-lg bg-stone-50 p-3 text-xs">
-      <label className="flex items-center gap-1">
-        Classes
-        <input type="number" value={classes} onChange={(e) => setClasses(e.target.value)} className={`w-20 ${input}`} />
-      </label>
-      <label className="flex items-center gap-1">
-        Bonus
-        <input type="number" value={bonus} onChange={(e) => setBonus(e.target.value)} className={`w-20 ${input}`} />
-      </label>
-      <textarea
-        placeholder="Description"
-        value={description}
-        onChange={(e) => setDescription(e.target.value)}
-        rows={2}
-        className={`w-full ${input}`}
-      />
-      <div className="flex flex-wrap gap-2">
-        {perks.map((perk) => (
-          <label key={perk.id} className="flex items-center gap-1 rounded-lg border border-stone-300 px-2 py-1">
-            <input type="checkbox" checked={perkIds.includes(perk.id)} onChange={() => togglePerk(perk.id)} />
-            {perk.name}
-          </label>
-        ))}
-      </div>
-      <button
-        className={btn}
-        onClick={() =>
-          onRun(
-            () =>
-              api("/api/plans", "PATCH", {
-                id: plan.id,
-                classesPerCycle: Number(classes),
-                bonusCredits: Number(bonus),
-                description,
-                perkIds,
-              }),
-            "Plan updated.",
-          ).then((err) => {
-            if (!err) onDone();
-          })
-        }
-      >
-        Save
-      </button>
-    </div>
-  );
-}
-
 function PerksSection({ perks, onRun }: { perks: Perk[]; onRun: (a: () => Promise<string | null>, ok: string) => void }) {
   const [name, setName] = useState("");
   return (
     <section className="rounded-2xl bg-white p-6 shadow-sm">
-      <h2 className="text-sm font-medium text-stone-700">Plan perks</h2>
-      <p className="mt-1 text-xs text-stone-400">Reusable items (mat, water, towel…) that plans can include.</p>
+      <h2 className="text-sm font-medium text-stone-700">Package perks</h2>
+      <p className="mt-1 text-xs text-stone-400">Reusable items (mat, water, towel…) that packages can include.</p>
       <table className="mt-3 w-full text-left text-sm">
         <tbody>
           {perks.map((p) => (
@@ -910,11 +741,11 @@ function PackagesSection({ packages, classTypes, perks, onRun }: {
   onRun: (a: () => Promise<string | null>, ok: string) => Promise<string | null>;
 }) {
   const [form, setForm] = useState({
-    name: "", classTypeId: classTypes[0]?.id ?? "", sessions: "8", price: "", validDays: "90", perkIds: [] as string[],
+    name: "", classTypeIds: [] as string[], sessions: "8", price: "", validDays: "90", perkIds: [] as string[],
   });
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  function togglePerk(list: string[], id: string): string[] {
+  function toggleId(list: string[], id: string): string[] {
     return list.includes(id) ? list.filter((p) => p !== id) : [...list, id];
   }
 
@@ -922,9 +753,9 @@ function PackagesSection({ packages, classTypes, perks, onRun }: {
     <section className="rounded-2xl bg-white p-6 shadow-sm">
       <h2 className="text-sm font-medium text-stone-700">Packages</h2>
       <p className="mt-1 text-xs text-stone-400">
-        One-time session bundles for a single service — e.g. a Thai massage 8-session pack, or a
-        trainer-locked Pilates bundle (scope it to that trainer&apos;s class type). No auto-renewal;
-        unused sessions just expire.
+        One-time session bundles — pick one class for a single service (e.g. a Thai massage
+        8-session pack, or a trainer-locked Pilates bundle), or several to let members book any of
+        them from the same pool of sessions. No auto-renewal; unused sessions just expire.
       </p>
       <div className="mt-3 divide-y divide-stone-100">
         {packages.map((p) => (
@@ -933,7 +764,7 @@ function PackagesSection({ packages, classTypes, perks, onRun }: {
               <div>
                 <p className="font-medium text-stone-800">{p.name}</p>
                 <p className="text-stone-600">
-                  {p.classType.name} · {p.sessionsGranted} sessions · {formatGHS(p.priceGHS)} · {p.validDays}d
+                  {p.classTypes.map((c) => c.name).join(", ")} · {p.sessionsGranted} sessions · {formatGHS(p.priceGHS)} · {p.validDays}d
                   {p.perks.length > 0 && ` · ${p.perks.map((pk) => pk.name).join(", ")}`}
                 </p>
               </div>
@@ -954,46 +785,62 @@ function PackagesSection({ packages, classTypes, perks, onRun }: {
               </div>
             </div>
             {editingId === p.id && (
-              <PackageEditRow pkg={p} perks={perks} onRun={onRun} onDone={() => setEditingId(null)} />
+              <PackageEditRow pkg={p} classTypes={classTypes} perks={perks} onRun={onRun} onDone={() => setEditingId(null)} />
             )}
           </div>
         ))}
       </div>
       <div className="mt-3 flex flex-wrap items-start gap-2 border-t border-stone-100 pt-3">
         <input placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className={input} />
-        <select value={form.classTypeId} onChange={(e) => setForm({ ...form, classTypeId: e.target.value })} className={`bg-white ${input}`}>
-          {classTypes.map((c) => (
-            <option key={c.id} value={c.id}>{c.name}</option>
-          ))}
-        </select>
         <input placeholder="Sessions" type="number" value={form.sessions} onChange={(e) => setForm({ ...form, sessions: e.target.value })} className={`w-24 ${input}`} />
         <input placeholder="Price GHS" type="number" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} className={`w-28 ${input}`} />
         <input placeholder="Valid days" type="number" value={form.validDays} onChange={(e) => setForm({ ...form, validDays: e.target.value })} className={`w-28 ${input}`} />
-        <div className="flex flex-wrap gap-2">
-          {perks.map((perk) => (
-            <label key={perk.id} className="flex items-center gap-1 rounded-lg border border-stone-300 px-2 py-1 text-xs">
-              <input
-                type="checkbox"
-                checked={form.perkIds.includes(perk.id)}
-                onChange={() => setForm({ ...form, perkIds: togglePerk(form.perkIds, perk.id) })}
-              />
-              {perk.name}
-            </label>
-          ))}
+        <div className="w-full">
+          <p className="mb-1 text-xs text-stone-500">Classes covered</p>
+          <div className="flex flex-wrap gap-2">
+            {classTypes.map((c) => (
+              <label key={c.id} className="flex items-center gap-1 rounded-lg border border-stone-300 px-2 py-1 text-xs">
+                <input
+                  type="checkbox"
+                  checked={form.classTypeIds.includes(c.id)}
+                  onChange={() => setForm({ ...form, classTypeIds: toggleId(form.classTypeIds, c.id) })}
+                />
+                {c.name}
+              </label>
+            ))}
+          </div>
+        </div>
+        <div className="w-full">
+          <p className="mb-1 text-xs text-stone-500">Perks</p>
+          <div className="flex flex-wrap gap-2">
+            {perks.map((perk) => (
+              <label key={perk.id} className="flex items-center gap-1 rounded-lg border border-stone-300 px-2 py-1 text-xs">
+                <input
+                  type="checkbox"
+                  checked={form.perkIds.includes(perk.id)}
+                  onChange={() => setForm({ ...form, perkIds: toggleId(form.perkIds, perk.id) })}
+                />
+                {perk.name}
+              </label>
+            ))}
+          </div>
         </div>
         <button
-          disabled={!form.name || !form.classTypeId || !form.price}
+          disabled={!form.name || form.classTypeIds.length === 0 || !form.price}
           className={btn}
           onClick={() =>
             onRun(
               () =>
                 api("/api/packages", "POST", {
                   name: form.name,
-                  classTypeId: form.classTypeId,
+                  classTypeIds: form.classTypeIds,
                   sessionsGranted: Number(form.sessions),
                   priceGHS: parseGHS(form.price),
                   validDays: Number(form.validDays),
                   perkIds: form.perkIds,
+                }).then((err) => {
+                  if (!err) setForm({ name: "", classTypeIds: [], sessions: "8", price: "", validDays: "90", perkIds: [] });
+                  return err;
                 }),
               "Package created.",
             )
@@ -1006,14 +853,19 @@ function PackagesSection({ packages, classTypes, perks, onRun }: {
   );
 }
 
-function PackageEditRow({ pkg, perks, onRun, onDone }: {
-  pkg: Package; perks: Perk[]; onRun: (a: () => Promise<string | null>, ok: string) => Promise<string | null>; onDone: () => void;
+function PackageEditRow({ pkg, classTypes, perks, onRun, onDone }: {
+  pkg: Package; classTypes: ClassType[]; perks: Perk[];
+  onRun: (a: () => Promise<string | null>, ok: string) => Promise<string | null>; onDone: () => void;
 }) {
   const [sessions, setSessions] = useState(String(pkg.sessionsGranted));
   const [price, setPrice] = useState(String(pkg.priceGHS / 100));
   const [validDays, setValidDays] = useState(String(pkg.validDays));
+  const [classTypeIds, setClassTypeIds] = useState(pkg.classTypes.map((c) => c.id));
   const [perkIds, setPerkIds] = useState(pkg.perks.map((p) => p.id));
 
+  function toggleClassType(id: string) {
+    setClassTypeIds((list) => (list.includes(id) ? list.filter((c) => c !== id) : [...list, id]));
+  }
   function togglePerk(id: string) {
     setPerkIds((list) => (list.includes(id) ? list.filter((p) => p !== id) : [...list, id]));
   }
@@ -1032,6 +884,17 @@ function PackageEditRow({ pkg, perks, onRun, onDone }: {
         Valid days
         <input type="number" value={validDays} onChange={(e) => setValidDays(e.target.value)} className={`w-20 ${input}`} />
       </label>
+      <div className="w-full">
+        <p className="mb-1 text-stone-500">Classes covered</p>
+        <div className="flex flex-wrap gap-2">
+          {classTypes.map((c) => (
+            <label key={c.id} className="flex items-center gap-1 rounded-lg border border-stone-300 px-2 py-1">
+              <input type="checkbox" checked={classTypeIds.includes(c.id)} onChange={() => toggleClassType(c.id)} />
+              {c.name}
+            </label>
+          ))}
+        </div>
+      </div>
       <div className="flex flex-wrap gap-2">
         {perks.map((perk) => (
           <label key={perk.id} className="flex items-center gap-1 rounded-lg border border-stone-300 px-2 py-1">
@@ -1042,6 +905,7 @@ function PackageEditRow({ pkg, perks, onRun, onDone }: {
       </div>
       <button
         className={btn}
+        disabled={classTypeIds.length === 0}
         onClick={() =>
           onRun(
             () =>
@@ -1050,6 +914,7 @@ function PackageEditRow({ pkg, perks, onRun, onDone }: {
                 sessionsGranted: Number(sessions),
                 priceGHS: parseGHS(price),
                 validDays: Number(validDays),
+                classTypeIds,
                 perkIds,
               }),
             "Package updated.",

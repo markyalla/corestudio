@@ -128,42 +128,16 @@ export function verifyPayment(reference: string) {
   );
 }
 
-export interface PlanOption {
+export interface PackageClass {
   id: string;
   name: string;
-  priceGHS: number;
-  classesPerCycle: number;
-  bonusCredits: number;
-  cycleDays: number;
   description: string;
-  perks: string[];
-}
-
-export function getPlans() {
-  return api<{ plans: PlanOption[] }>("/api/app/plans");
-}
-
-export function subscribeToPlan(planId: string) {
-  return api<{ authorizationUrl: string; reference: string }>(
-    `/api/app/plans/${planId}/subscribe`,
-    { method: "POST" },
-  );
-}
-
-export function subscribeToPlanWithCash(planId: string) {
-  return api<{ cash: true; paymentId: string }>(
-    `/api/app/plans/${planId}/subscribe`,
-    { method: "POST", body: { method: "cash" } },
-  );
 }
 
 export interface PackageOption {
   id: string;
   name: string;
-  classTypeId: string;
-  classTypeName: string;
-  classTypeDescription: string;
-  durationMins: number;
+  classes: PackageClass[];
   sessionsGranted: number;
   priceGHS: number;
   validDays: number;
@@ -173,17 +147,15 @@ export interface PackageOption {
 export interface MyPackage {
   id: string;
   name: string;
-  classTypeId: string;
-  classTypeName: string;
-  classTypeDescription: string;
+  classes: PackageClass[];
   sessionsLeft: number;
   expiresAt: string;
   perks: string[];
 }
 
 /** Purchasable packages plus the member's own active ones (unexpired, with
- *  sessions left) — one-time bundles for a single service, separate from
- *  recurring plan credits. */
+ *  sessions left) — one-time bundles that can cover one or more class
+ *  types, sharing one pool of sessions across all of them. */
 export function getPackages() {
   return api<{ packages: PackageOption[]; myPackages: MyPackage[] }>("/api/app/packages");
 }
@@ -200,15 +172,6 @@ export function subscribeToPackageWithCash(packageId: string) {
     `/api/app/packages/${packageId}/subscribe`,
     { method: "POST", body: { method: "cash" } },
   );
-}
-
-/** Renew the member's current plan, paying in cash at the studio — staff
- *  confirm the pending payment in the admin portal, which tops up credits. */
-export function renewPlanWithCash() {
-  return api<{ cash: true; paymentId: string }>("/api/app/renew", {
-    method: "POST",
-    body: { method: "cash" },
-  });
 }
 
 export function bookSessionWithCash(sessionId: string) {
@@ -284,8 +247,6 @@ export interface ProgressResponse {
     attendanceRate: number | null;
     perWeek: number;
     upcoming: number;
-    creditsLeft: number;
-    daysToRenewal: number | null;
   };
   tier: ProgressTier;
   headline: string;

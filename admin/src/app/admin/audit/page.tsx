@@ -17,12 +17,11 @@ const ACTIONS = [
   "booking.waitlist", "booking.waitlist_promote", "booking.waitlist_offer", "booking.waitlist_offer_expired",
   "booking.waitlist_claimed", "booking.paid_but_full",
   "session.update", "session.cancel", "session.skipped_unavailable_trainer",
-  "member.create", "member.update", "member.plan_activated", "member.frozen_unpaid",
+  "member.create", "member.update",
   "trainer.create", "trainer.update", "trainer.unavailability_add", "trainer.unavailability_remove",
   "class_type.create", "class_type.update",
   "location.create", "location.update",
   "perk.create", "perk.update",
-  "plan.create", "plan.update",
   "studio.update",
   "payment.record_manual", "payment.confirm_cash",
   "payout.create", "payout.mark_paid",
@@ -30,7 +29,7 @@ const ACTIONS = [
 
 const ENTITIES = [
   "User", "Booking", "Session", "Member", "Trainer", "ClassType", "Location",
-  "PerkItem", "MembershipPlan", "Studio", "Payment", "Payout",
+  "PerkItem", "Studio", "Payment", "Payout",
 ] as const;
 
 // Entities with an admin detail page worth linking straight to.

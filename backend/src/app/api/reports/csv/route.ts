@@ -59,16 +59,13 @@ export const GET = apiHandler(async (req: Request) => {
       break;
     case "members":
       rows = (
-        await prisma.member.findMany({ include: { user: true, plan: true } })
+        await prisma.member.findMany({ include: { user: true } })
       ).map((m) => ({
         name: m.user.name,
         email: m.user.email,
         phone: m.user.phone ?? "",
-        plan: m.plan?.name ?? "",
         status: m.status,
-        creditsLeft: m.creditsLeft,
         walletGHS: (m.walletGHS / 100).toFixed(2),
-        cycleRenewsAt: m.cycleRenewsAt?.toISOString() ?? "",
         joinedAt: m.joinedAt.toISOString(),
       }));
       break;

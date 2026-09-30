@@ -9,7 +9,7 @@ import {
   initializeTransaction,
   newReference,
 } from "./paystack";
-import type { Member, MembershipPlan, Package, Prisma, Session, User } from "@prisma/client";
+import type { Member, Package, Prisma, Session, User } from "@prisma/client";
 
 function appUrl(path: string): string {
   return `${process.env.BACKEND_PUBLIC_URL ?? "http://localhost:4000"}${path}`;
@@ -60,44 +60,9 @@ export async function startBookingCheckout(opts: {
   return { authorizationUrl: tx.authorization_url, reference };
 }
 
-/** Rule 6: renewal checkout for the member's plan. Also doubles as the
- *  self-serve "subscribe to this plan" checkout (GET /api/app/plans + POST
- *  /api/app/plans/:id/subscribe) — fulfilment (handleChargeSuccess, kind
- *  "RENEWAL" below) already just assigns the plan + resets credits + sets
- *  the next renewal date, which is exactly "subscribe" too, regardless of
- *  whether the member had a plan before. */
-export async function startRenewalCheckout(opts: {
-  member: Member & { user: User };
-  plan: MembershipPlan;
-  description?: string;
-}) {
-  const reference = newReference("rn");
-  await prisma.payment.create({
-    data: {
-      memberId: opts.member.id,
-      amountGHS: opts.plan.priceGHS,
-      method: "MOMO",
-      description: opts.description ?? `${opts.plan.name} renewal`,
-      paystackRef: reference,
-      status: "PENDING",
-    },
-  });
-  const tx = await initializeTransaction({
-    email: opts.member.user.email,
-    amountPesewas: opts.plan.priceGHS,
-    reference,
-    metadata: { kind: "RENEWAL", memberId: opts.member.id, planId: opts.plan.id, walletApplied: 0 },
-    callbackUrl: appUrl(PAY_CALLBACK_PATH),
-    customerName: opts.member.user.name,
-    customerPhone: opts.member.user.phone ?? undefined,
-  });
-  return { authorizationUrl: tx.authorization_url, reference };
-}
-
 /** Self-serve purchase of a one-time Package (e.g. a Thai massage 8-session
- *  bundle, or a trainer-locked Pilates bundle) — same checkout shape as plan
- *  renewal, but fulfilment (handleChargeSuccess, kind "PACKAGE") creates a
- *  fresh MemberPackage rather than touching the member's generic credits. */
+ *  bundle, or a trainer-locked Pilates bundle) — fulfilment
+ *  (handleChargeSuccess, kind "PACKAGE") creates a fresh MemberPackage. */
 export async function startPackageCheckout(opts: {
   member: Member & { user: User };
   pkg: Package;
@@ -145,34 +110,9 @@ export async function createCashPackagePayment(opts: {
   return payment;
 }
 
-/** Creates a PENDING cash payment for a plan — no Paystack involved. The
- *  member picked "pay with cash" in the app; staff confirm it in person at
- *  the studio (see confirmCashPlanPayment below), which is what actually
- *  activates the plan. */
-export async function createCashPlanPayment(opts: {
-  member: Member & { user: User };
-  plan: MembershipPlan;
-}) {
-  const description =
-    opts.member.planId === opts.plan.id
-      ? `${opts.plan.name} renewal (cash — pending)`
-      : `${opts.plan.name} subscription (cash — pending)`;
-  const payment = await prisma.payment.create({
-    data: {
-      memberId: opts.member.id,
-      planId: opts.plan.id,
-      amountGHS: opts.plan.priceGHS,
-      method: "CASH",
-      description,
-      status: "PENDING",
-    },
-  });
-  return payment;
-}
-
 /** Staff confirms a member's pending cash payment (they've paid in person)
- *  — flips it to CONFIRMED and, if it's for a plan, activates it via the
- *  same logic a successful Paystack renewal/subscription uses. */
+ *  — flips it to CONFIRMED and, if it's for a package, activates it via the
+ *  same logic a successful Paystack purchase uses. */
 export async function confirmCashPayment(opts: { paymentId: string; actorUserId: string }) {
   const sms = getNotificationService();
 
@@ -188,14 +128,11 @@ export async function confirmCashPayment(opts: { paymentId: string; actorUserId:
       action: "payment.confirm_cash",
       entity: "Payment",
       entityId: payment.id,
-      payload: { memberId: payment.memberId, planId: payment.planId, packageId: payment.packageId },
+      payload: { memberId: payment.memberId, packageId: payment.packageId },
     });
 
     if (payment.packageId) {
       return activatePackage(tx, { memberId: payment.memberId, packageId: payment.packageId, reference: payment.id });
-    }
-    if (payment.planId) {
-      return activateMembership(tx, { memberId: payment.memberId, planId: payment.planId });
     }
     if (payment.bookingId) {
       const booking = await tx.booking.findUnique({
@@ -213,7 +150,7 @@ export async function confirmCashPayment(opts: { paymentId: string; actorUserId:
         message: `Payment received for ${className} on ${when} — you're all set!`,
       };
     }
-    return { note: "no plan/package/booking on this payment" };
+    return { note: "no package/booking on this payment" };
   });
 
   if ("phone" in outcome && outcome.phone) {
@@ -262,47 +199,6 @@ export async function startWaitlistClaimCheckout(opts: {
     customerPhone: opts.userPhone ?? undefined,
   });
   return { authorizationUrl: tx.authorization_url, reference };
-}
-
-/**
- * Assigns a plan to a member: adds the plan's credits to whatever they
- * already have (switching plans or renewing early doesn't wipe out unused
- * credits) and extends cycleRenewsAt from their current renewal date if
- * it's still in the future, else from now. Shared by both the Paystack
- * success path (handleChargeSuccess, kind "RENEWAL") and staff confirming a
- * cash payment (confirmCashPayment above) — same effect either way.
- */
-async function activateMembership(
-  tx: Prisma.TransactionClient,
-  opts: { memberId: string; planId: string; reference?: string },
-) {
-  const member = await tx.member.findUnique({ where: { id: opts.memberId }, include: { user: true } });
-  const plan = await tx.membershipPlan.findUnique({ where: { id: opts.planId } });
-  if (!member || !plan) return { note: "member/plan gone" };
-
-  const base =
-    member.cycleRenewsAt && member.cycleRenewsAt > new Date() ? member.cycleRenewsAt : new Date();
-  const totalClasses = plan.classesPerCycle + plan.bonusCredits;
-  await tx.member.update({
-    where: { id: member.id },
-    data: {
-      planId: plan.id,
-      status: "ACTIVE",
-      creditsLeft: { increment: totalClasses },
-      cycleRenewsAt: new Date(base.getTime() + plan.cycleDays * 24 * 60 * 60 * 1000),
-    },
-  });
-  await audit(tx, {
-    userId: member.userId,
-    action: "member.plan_activated",
-    entity: "Member",
-    entityId: member.id,
-    payload: { planId: plan.id, reference: opts.reference },
-  });
-  return {
-    phone: member.user.phone,
-    message: `Your ${plan.name} plan is active — ${totalClasses} classes added. See you in the studio!`,
-  };
 }
 
 /**
@@ -442,14 +338,6 @@ export async function handleChargeSuccess(event: {
         phone: member.user.phone,
         message: `Payment received — you're booked for ${session.classType?.name ?? "your session"} on ${session.startsAt.toISOString().slice(0, 16).replace("T", " ")}.`,
       };
-    }
-
-    if (meta.kind === "RENEWAL") {
-      return activateMembership(tx, {
-        memberId: meta.memberId,
-        planId: meta.planId,
-        reference: event.reference,
-      });
     }
 
     if (meta.kind === "PACKAGE") {

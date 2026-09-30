@@ -9,71 +9,22 @@ beforeEach(async () => {
   await makeStudio(12);
 });
 
-describe("credit consumption (rule 1)", () => {
-  it("consumes one credit on booking", async () => {
-    const trainer = await makeTrainer();
-    const session = await makeSession({ trainerId: trainer.id });
-    const member = await makeMember({ creditsLeft: 5 });
-
-    const booking = await bookSession({
-      sessionId: session.id,
-      memberId: member.id,
-      paidWith: "CREDIT",
-      actorUserId: member.userId,
-    });
-
-    expect(booking.status).toBe("BOOKED");
-    expect(booking.paidWith).toBe("CREDIT");
-    const after = await prisma.member.findUnique({ where: { id: member.id } });
-    expect(after!.creditsLeft).toBe(4);
-  });
-
-  it("rejects booking with zero credits", async () => {
-    const trainer = await makeTrainer();
-    const session = await makeSession({ trainerId: trainer.id });
-    const member = await makeMember({ creditsLeft: 0 });
-
-    await expect(
-      bookSession({
-        sessionId: session.id,
-        memberId: member.id,
-        paidWith: "CREDIT",
-        actorUserId: member.userId,
-      }),
-    ).rejects.toThrow(/no credits/i);
-  });
-
-  it("waitlists on a full session without charging a credit", async () => {
-    const trainer = await makeTrainer();
-    const session = await makeSession({ trainerId: trainer.id, capacity: 1 });
-    const first = await makeMember({ creditsLeft: 5 });
-    const second = await makeMember({ creditsLeft: 5 });
-
-    await bookSession({ sessionId: session.id, memberId: first.id, paidWith: "CREDIT", actorUserId: first.userId });
-    const wl = await bookSession({ sessionId: session.id, memberId: second.id, paidWith: "CREDIT", actorUserId: second.userId });
-
-    expect(wl.status).toBe("WAITLIST");
-    const after = await prisma.member.findUnique({ where: { id: second.id } });
-    expect(after!.creditsLeft).toBe(5);
-  });
-});
-
 describe("waitlist promotion order (rule 3)", () => {
   it("promotes the oldest waitlisted member first", async () => {
     const trainer = await makeTrainer();
     const session = await makeSession({ trainerId: trainer.id, capacity: 1 });
-    const booked = await makeMember({ creditsLeft: 5 });
-    const early = await makeMember({ creditsLeft: 5 });
-    const late = await makeMember({ creditsLeft: 5 });
+    const booked = await makeMember();
+    const early = await makeMember();
+    const late = await makeMember();
 
-    const b = await bookSession({ sessionId: session.id, memberId: booked.id, paidWith: "CREDIT", actorUserId: booked.userId });
-    const wlEarly = await bookSession({ sessionId: session.id, memberId: early.id, paidWith: "CREDIT", actorUserId: early.userId });
+    const b = await bookSession({ sessionId: session.id, memberId: booked.id, paidWith: "COMP", actorUserId: booked.userId });
+    const wlEarly = await bookSession({ sessionId: session.id, memberId: early.id, paidWith: "COMP", actorUserId: early.userId });
     // Force a strictly older createdAt for the early entry
     await prisma.booking.update({
       where: { id: wlEarly.id },
       data: { createdAt: new Date(Date.now() - 60_000) },
     });
-    await bookSession({ sessionId: session.id, memberId: late.id, paidWith: "CREDIT", actorUserId: late.userId });
+    await bookSession({ sessionId: session.id, memberId: late.id, paidWith: "COMP", actorUserId: late.userId });
 
     await cancelBooking({ bookingId: b.id, actorUserId: booked.userId, isStaff: true });
 
@@ -83,25 +34,28 @@ describe("waitlist promotion order (rule 3)", () => {
     const lateBooking = await prisma.booking.findFirst({
       where: { sessionId: session.id, memberId: late.id },
     });
-    expect(earlyBooking!.status).toBe("BOOKED"); // had credits → auto-promoted
+    // Still WAITLIST until paid — but only the older entry gets a payment window
+    expect(earlyBooking!.status).toBe("WAITLIST");
+    expect(earlyBooking!.promotionExpiresAt).not.toBeNull();
     expect(lateBooking!.status).toBe("WAITLIST");
+    expect(lateBooking!.promotionExpiresAt).toBeNull();
   });
 
-  it("opens a 2h payment window for promoted members without credits", async () => {
+  it("opens a 2h payment window for the promoted member", async () => {
     const trainer = await makeTrainer();
     const session = await makeSession({ trainerId: trainer.id, capacity: 1 });
-    const booked = await makeMember({ creditsLeft: 5 });
-    const broke = await makeMember({ creditsLeft: 0 });
+    const booked = await makeMember();
+    const waiting = await makeMember();
 
-    const b = await bookSession({ sessionId: session.id, memberId: booked.id, paidWith: "CREDIT", actorUserId: booked.userId });
+    const b = await bookSession({ sessionId: session.id, memberId: booked.id, paidWith: "COMP", actorUserId: booked.userId });
     await prisma.booking.create({
-      data: { sessionId: session.id, memberId: broke.id, status: "WAITLIST", amountGHS: 0 },
+      data: { sessionId: session.id, memberId: waiting.id, status: "WAITLIST", amountGHS: 0 },
     });
 
     await cancelBooking({ bookingId: b.id, actorUserId: booked.userId, isStaff: true });
 
     const offer = await prisma.booking.findFirst({
-      where: { sessionId: session.id, memberId: broke.id },
+      where: { sessionId: session.id, memberId: waiting.id },
     });
     expect(offer!.status).toBe("WAITLIST");
     expect(offer!.promotionExpiresAt).not.toBeNull();
@@ -112,10 +66,10 @@ describe("waitlist promotion order (rule 3)", () => {
   it("does not double-promote when the session is already full", async () => {
     const trainer = await makeTrainer();
     const session = await makeSession({ trainerId: trainer.id, capacity: 1 });
-    const a = await makeMember({ creditsLeft: 5 });
-    const b = await makeMember({ creditsLeft: 5 });
-    await bookSession({ sessionId: session.id, memberId: a.id, paidWith: "CREDIT", actorUserId: a.userId });
-    await bookSession({ sessionId: session.id, memberId: b.id, paidWith: "CREDIT", actorUserId: b.userId });
+    const a = await makeMember();
+    const b = await makeMember();
+    await bookSession({ sessionId: session.id, memberId: a.id, paidWith: "COMP", actorUserId: a.userId });
+    await bookSession({ sessionId: session.id, memberId: b.id, paidWith: "COMP", actorUserId: b.userId });
 
     await promoteWaitlist(session.id); // capacity still full → no-op
 
@@ -138,21 +92,21 @@ describe("payout computation excludes already-paid bookings (rule 5)", () => {
     });
     const m1 = await makeMember();
     const m2 = await makeMember();
-    // Two paid attended bookings + one credit booking (no cash → excluded)
+    // Two paid attended bookings + one comp booking (no cash → excluded)
     await prisma.booking.create({
       data: { sessionId: session.id, memberId: m1.id, status: "ATTENDED", paidWith: "MOMO", amountGHS: 10000 },
     });
     await prisma.booking.create({
       data: { sessionId: session.id, memberId: m2.id, status: "BOOKED", paidWith: "CASH", amountGHS: 10000 },
     });
-    const credits = await makeMember({ creditsLeft: 5 });
+    const comped = await makeMember();
     await prisma.booking.create({
-      data: { sessionId: session.id, memberId: credits.id, status: "ATTENDED", paidWith: "CREDIT", amountGHS: 0 },
+      data: { sessionId: session.id, memberId: comped.id, status: "ATTENDED", paidWith: "COMP", amountGHS: 0 },
     });
 
     const owedBefore = await computeOwedPerTrainer();
     const mine = owedBefore.find((o) => o.trainerId === trainer.id)!;
-    expect(mine.grossGHS).toBe(20000); // ATTENDED + BOOKED-on-completed, credit excluded
+    expect(mine.grossGHS).toBe(20000); // ATTENDED + BOOKED-on-completed, comp excluded
     expect(mine.amountGHS).toBe(10000); // 50%
 
     await createPayout({ trainerId: trainer.id, actorUserId: owner.id });
@@ -203,9 +157,9 @@ describe("cancellation cutoff enforcement (rule 2)", () => {
       trainerId: trainer.id,
       startsAt: new Date(Date.now() + 6 * 60 * 60 * 1000), // 6h away, cutoff 12h
     });
-    const member = await makeMember({ creditsLeft: 5 });
+    const member = await makeMember();
     const booking = await bookSession({
-      sessionId: session.id, memberId: member.id, paidWith: "CREDIT", actorUserId: member.userId,
+      sessionId: session.id, memberId: member.id, paidWith: "COMP", actorUserId: member.userId,
     });
 
     await expect(
@@ -213,15 +167,16 @@ describe("cancellation cutoff enforcement (rule 2)", () => {
     ).rejects.toThrow(/cancellations close/i);
   });
 
-  it("allows member cancellation outside the cutoff and refunds the credit", async () => {
+  it("allows member cancellation outside the cutoff and refunds paid amounts to the wallet", async () => {
     const trainer = await makeTrainer();
     const session = await makeSession({
       trainerId: trainer.id,
+      priceGHS: 6000,
       startsAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
     });
-    const member = await makeMember({ creditsLeft: 5 });
+    const member = await makeMember();
     const booking = await bookSession({
-      sessionId: session.id, memberId: member.id, paidWith: "CREDIT", actorUserId: member.userId,
+      sessionId: session.id, memberId: member.id, paidWith: "CASH", actorUserId: member.userId,
     });
 
     const cancelled = await cancelBooking({
@@ -229,7 +184,7 @@ describe("cancellation cutoff enforcement (rule 2)", () => {
     });
     expect(cancelled.status).toBe("CANCELLED");
     const after = await prisma.member.findUnique({ where: { id: member.id } });
-    expect(after!.creditsLeft).toBe(5); // consumed then refunded
+    expect(after!.walletGHS).toBe(6000);
   });
 
   it("lets staff cancel inside the cutoff, refunding paid amounts to the wallet", async () => {
@@ -239,7 +194,7 @@ describe("cancellation cutoff enforcement (rule 2)", () => {
       priceGHS: 8000,
       startsAt: new Date(Date.now() + 2 * 60 * 60 * 1000),
     });
-    const member = await makeMember({ creditsLeft: 0 });
+    const member = await makeMember();
     const staff = await prisma.user.create({
       data: { name: "Admin", email: `admin${Date.now()}@test.local`, passwordHash: "x", role: "ADMIN" },
     });

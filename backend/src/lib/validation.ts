@@ -29,10 +29,10 @@ export const updateSessionSchema = z.union([
 export const createBookingSchema = z.object({
   sessionId: z.string().min(1),
   memberId: z.string().min(1),
-  // Front desk can take cash/comp; CREDIT consumes a plan credit; PACKAGE
-  // consumes a session from a matching MemberPackage (bookSession() 404s if
-  // the member has none for this session's class type).
-  paidWith: z.enum(["CREDIT", "PACKAGE", "CASH", "COMP", "MOMO", "CARD"]).default("CREDIT"),
+  // Front desk can take cash/comp; PACKAGE consumes a session from a
+  // matching MemberPackage (bookSession() 404s if the member has none for
+  // this session's class type).
+  paidWith: z.enum(["PACKAGE", "CASH", "COMP", "MOMO", "CARD"]).default("CASH"),
 });
 
 export const updateBookingSchema = z.object({
@@ -43,16 +43,13 @@ export const createMemberSchema = z.object({
   name: z.string().min(1).max(200),
   email: z.string().email().max(320),
   phone: z.string().min(9).max(20),
-  planId: z.string().optional(),
   password: z.string().min(8).max(200),
 });
 
 export const updateMemberSchema = z.object({
   name: z.string().min(1).max(200).optional(),
   phone: z.string().min(9).max(20).optional(),
-  planId: z.string().nullable().optional(),
   status: z.enum(["ACTIVE", "FROZEN", "CANCELLED"]).optional(),
-  creditsLeft: z.number().int().min(0).optional(),
   // Positive or negative adjustment in pesewas, applied to walletGHS
   walletAdjustGHS: z.number().int().optional(),
 });

@@ -11,7 +11,6 @@ function secretKey(): string {
 
 export type ChargeMetadata =
   | { kind: "BOOKING"; sessionId: string; memberId: string; walletApplied: number }
-  | { kind: "RENEWAL"; memberId: string; planId: string; walletApplied: number }
   | { kind: "WAITLIST_CLAIM"; bookingId: string }
   | { kind: "PACKAGE"; memberId: string; packageId: string };
 

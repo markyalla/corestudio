@@ -20,7 +20,7 @@ const schema = z.object({
 
 /** Books a private (one-on-one) class: creates a PT Session at the member's
  *  chosen time inside one of the trainer's availability windows, then pays for
- *  it with the same cascade as a group booking (credit → wallet → Paystack),
+ *  it with the same cascade as a group booking (free → wallet → Paystack),
  *  or records a pending cash payment. */
 export const POST = apiHandler(async (req: Request) => {
   const auth = await requireMobileAuth(req, ["MEMBER"]);
@@ -87,12 +87,6 @@ export const POST = apiHandler(async (req: Request) => {
       return NextResponse.json({ cash: true, booking }, { status: 201 });
     }
 
-    if (member.creditsLeft > 0) {
-      const booking = await bookSession({
-        sessionId: session.id, memberId: member.id, paidWith: "CREDIT", actorUserId: auth.user.id,
-      });
-      return NextResponse.json({ booking }, { status: 201 });
-    }
     if (session.priceGHS === 0) {
       const booking = await bookSession({
         sessionId: session.id, memberId: member.id, paidWith: "COMP", actorUserId: auth.user.id,
@@ -106,7 +100,7 @@ export const POST = apiHandler(async (req: Request) => {
       return NextResponse.json({ booking }, { status: 201 });
     }
 
-    if (member.status !== "ACTIVE") throw new ApiError(400, "Membership is not active — renew to book");
+    if (member.status !== "ACTIVE") throw new ApiError(400, "Membership is not active — contact the studio");
     const { authorizationUrl, reference } = await startBookingCheckout({
       member, session, className: "Private class",
     });

@@ -22,7 +22,6 @@ import {
   getMotivation,
   getPackages,
   getProgress,
-  renewPlanWithCash,
   subscribeToPackage,
   subscribeToPackageWithCash,
   verifyPayment,
@@ -39,17 +38,8 @@ import { CheckoutModal } from "@/components/CheckoutModal";
 import type { SessionItem, SessionsResponse } from "./timetable";
 
 interface ProfileResponse {
-  member: { creditsLeft: number; walletGHS: number; cycleRenewsAt: string | null };
+  member: { walletGHS: number };
   user: { name: string };
-  plan: {
-    name: string;
-    priceGHS: number;
-    classesPerCycle: number;
-    bonusCredits: number;
-    cycleDays: number;
-    description: string;
-    perks: string[];
-  } | null;
 }
 
 /** Front-desk phone fields are free text an admin may fill with more than one
@@ -97,15 +87,12 @@ export default function HomeScreen() {
   const [availablePackages, setAvailablePackages] = useState<PackageOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [detail, setDetail] = useState<
-    | { kind: "plan" }
     | { kind: "myPackage"; pkg: MyPackage }
     | { kind: "promoPackage"; pkg: PackageOption }
     | null
   >(null);
-  const [renewingPlan, setRenewingPlan] = useState(false);
   const [subscribingPackageId, setSubscribingPackageId] = useState<string | null>(null);
   const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
-  const [checkoutKind, setCheckoutKind] = useState<"plan" | "package" | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -166,7 +153,8 @@ export default function HomeScreen() {
 
   const packageSessions = useMemo(() => {
     if (detail?.kind !== "myPackage") return [];
-    return allSessions.filter((s) => s.classType?.id === detail.pkg.classTypeId);
+    const classIds = new Set(detail.pkg.classes.map((c) => c.id));
+    return allSessions.filter((s) => !!s.classType && classIds.has(s.classType.id));
   }, [detail, allSessions]);
 
   function openSession(item: SessionItem) {
@@ -177,54 +165,8 @@ export default function HomeScreen() {
     });
   }
 
-  async function onRenewPlan() {
-    setRenewingPlan(true);
-    setCheckoutKind("plan");
-    try {
-      const res = await api<{ authorizationUrl: string; reference?: string }>("/api/app/renew", {
-        method: "POST",
-      });
-      setCheckoutUrl(res.authorizationUrl);
-    } catch (e) {
-      Alert.alert("Couldn't start renewal", e instanceof ApiError ? e.message : "Try again");
-      setRenewingPlan(false);
-    }
-  }
-
-  function onRenewPlanCash() {
-    Alert.alert(
-      "Pay with cash",
-      "Renew at the studio — a staff member confirms your payment there and your credits top up right after.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Confirm",
-          onPress: async () => {
-            setRenewingPlan(true);
-            try {
-              await renewPlanWithCash();
-              Alert.alert("Saved", "Pay at the studio — staff will confirm it and your credits will top up.");
-              setDetail(null);
-              await load();
-            } catch (e) {
-              Alert.alert("Couldn't do that", e instanceof ApiError ? e.message : "Try again");
-            } finally {
-              setRenewingPlan(false);
-            }
-          },
-        },
-      ],
-    );
-  }
-
-  function onChangePlan() {
-    setDetail(null);
-    router.push("/plans");
-  }
-
   async function onBuyPackage(pkg: PackageOption) {
     setSubscribingPackageId(pkg.id);
-    setCheckoutKind("package");
     try {
       const res = await subscribeToPackage(pkg.id);
       setCheckoutUrl(res.authorizationUrl);
@@ -261,17 +203,12 @@ export default function HomeScreen() {
   }
 
   async function onCheckoutClose(reference: string | null) {
-    const kind = checkoutKind;
     setCheckoutUrl(null);
-    setCheckoutKind(null);
     if (reference) {
       try {
         const { status } = await verifyPayment(reference);
         if (status === "success") {
-          Alert.alert(
-            kind === "plan" ? "Plan renewed!" : "You're set!",
-            kind === "plan" ? "Your credits have been topped up." : "Your sessions are ready — go book a class.",
-          );
+          Alert.alert("You're set!", "Your sessions are ready — go book a class.");
           setDetail(null);
         } else {
           Alert.alert("Payment not completed", `Status: ${status}.`);
@@ -281,7 +218,6 @@ export default function HomeScreen() {
       }
     }
     await load();
-    setRenewingPlan(false);
     setSubscribingPackageId(null);
   }
 
@@ -313,22 +249,11 @@ export default function HomeScreen() {
           </View>
         )}
 
-        {profile && (
-          <Pressable
-            style={({ pressed }) => [styles.planCard, shadow.card, pressed && { opacity: 0.9 }]}
-            onPress={() => (profile.plan ? setDetail({ kind: "plan" }) : router.push("/plans"))}
-          >
-            <View style={styles.planCardRow}>
-              <Text style={styles.planName}>{profile.plan?.name ?? "No plan yet"}</Text>
-              <Ionicons name="chevron-forward" size={20} color={colors.white} />
-            </View>
-            <Text style={styles.planCredits}>
-              {profile.plan ? `${profile.member.creditsLeft} classes left` : "Tap to choose a plan"}
-            </Text>
-            {profile.member.walletGHS > 0 && (
-              <Text style={styles.planWallet}>Wallet · {formatGHS(profile.member.walletGHS)}</Text>
-            )}
-          </Pressable>
+        {!!profile && profile.member.walletGHS > 0 && (
+          <View style={[styles.walletCard, shadow.card]}>
+            <Ionicons name="wallet-outline" size={18} color={colors.white} />
+            <Text style={styles.walletText}>Wallet · {formatGHS(profile.member.walletGHS)}</Text>
+          </View>
         )}
 
         {myPackages.length > 0 && (
@@ -378,7 +303,7 @@ export default function HomeScreen() {
                   <View style={styles.cardTextWrap}>
                     <Text style={styles.cardLabel} numberOfLines={1}>{pkg.name}</Text>
                     <Text style={styles.cardSub} numberOfLines={1}>
-                      {pkg.classTypeName} · {pkg.sessionsGranted} sessions · {formatGHS(pkg.priceGHS)}
+                      {pkg.classes.map((c) => c.name).join(", ")} · {pkg.sessionsGranted} sessions · {formatGHS(pkg.priceGHS)}
                     </Text>
                   </View>
                   <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
@@ -388,60 +313,23 @@ export default function HomeScreen() {
           </>
         )}
 
-        {profile?.plan && (
-          <DetailModal
-            visible={detail?.kind === "plan"}
-            onClose={() => setDetail(null)}
-            title={profile.plan.name}
-            price={`${formatGHS(profile.plan.priceGHS)} / ${profile.plan.cycleDays}d`}
-            metaLines={[
-              `${profile.plan.classesPerCycle} classes${profile.plan.bonusCredits > 0 ? ` + ${profile.plan.bonusCredits} bonus` : ""} per cycle`,
-              `${profile.member.creditsLeft} classes left right now`,
-            ]}
-            description={profile.plan.description}
-            perks={profile.plan.perks}
-          >
-            <View style={styles.detailActionRow}>
-              <Pressable
-                style={({ pressed }) => [styles.detailButton, styles.detailButtonFlex, pressed && styles.detailButtonPressed]}
-                disabled={renewingPlan}
-                onPress={onRenewPlan}
-              >
-                {renewingPlan ? (
-                  <ActivityIndicator color={colors.white} />
-                ) : (
-                  <Text style={styles.detailButtonText}>Renew plan</Text>
-                )}
-              </Pressable>
-              <Pressable
-                style={({ pressed }) => [styles.detailSecondaryButton, styles.detailButtonFlex, pressed && styles.detailSecondaryPressed]}
-                disabled={renewingPlan}
-                onPress={onChangePlan}
-              >
-                <Text style={styles.detailSecondaryText}>Change plan</Text>
-              </Pressable>
-            </View>
-            <Pressable style={styles.detailCashButton} onPress={onRenewPlanCash} disabled={renewingPlan}>
-              <Text style={styles.detailCashText}>Pay with cash at the studio</Text>
-            </Pressable>
-          </DetailModal>
-        )}
         {detail?.kind === "myPackage" && (
           <DetailModal
             visible
             onClose={() => setDetail(null)}
             title={detail.pkg.name}
             metaLines={[
-              `${detail.pkg.classTypeName}`,
+              detail.pkg.classes.map((c) => c.name).join(", "),
               `${detail.pkg.sessionsLeft} sessions left · expires ${new Date(detail.pkg.expiresAt).toLocaleDateString()}`,
             ]}
-            description={detail.pkg.classTypeDescription}
+            description={detail.pkg.classes.length === 1 ? detail.pkg.classes[0].description : undefined}
+            classNames={detail.pkg.classes.map((c) => c.name)}
             perks={detail.pkg.perks}
           >
             <Text style={styles.detailSectionLabel}>Book a class</Text>
             {packageSessions.length === 0 ? (
               <Text style={styles.detailEmptyText}>
-                No upcoming {detail.pkg.classTypeName} sessions right now — check Classes to see what&apos;s coming up.
+                No upcoming sessions right now for the classes this package covers — check Classes to see what&apos;s coming up.
               </Text>
             ) : (
               packageSessions.map((s) => (
@@ -456,7 +344,7 @@ export default function HomeScreen() {
                 >
                   <View style={styles.sessionPickTextWrap}>
                     <Text style={styles.sessionPickTitle} numberOfLines={1}>
-                      {s.classType?.name ?? detail.pkg.classTypeName}
+                      {s.classType?.name ?? detail.pkg.name}
                     </Text>
                     <Text style={styles.sessionPickSub} numberOfLines={1}>
                       {new Date(s.startsAt).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })}
@@ -479,10 +367,11 @@ export default function HomeScreen() {
             title={detail.pkg.name}
             price={formatGHS(detail.pkg.priceGHS)}
             metaLines={[
-              `${detail.pkg.classTypeName}`,
+              detail.pkg.classes.map((c) => c.name).join(", "),
               `${detail.pkg.sessionsGranted} sessions · valid ${detail.pkg.validDays} days`,
             ]}
-            description={detail.pkg.classTypeDescription}
+            description={detail.pkg.classes.length === 1 ? detail.pkg.classes[0].description : undefined}
+            classNames={detail.pkg.classes.map((c) => c.name)}
             perks={detail.pkg.perks}
           >
             <Pressable
@@ -771,16 +660,16 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   avatarImage: { width: 28, height: 28 },
-  planCard: {
+  walletCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
     backgroundColor: colors.green,
     borderRadius: radius.lg,
-    padding: 20,
-    marginBottom: 28,
+    padding: 16,
+    marginBottom: 20,
   },
-  planCardRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  planName: { fontSize: 16, fontWeight: "700", color: colors.white, flexShrink: 1 },
-  planCredits: { fontSize: 22, fontWeight: "700", color: colors.white, marginTop: 8 },
-  planWallet: { fontSize: 13, color: colors.greenTint, marginTop: 4 },
+  walletText: { fontSize: 15, fontWeight: "700", color: colors.white },
   statsRow: { flexDirection: "row", gap: 12, marginBottom: 24 },
   statTile: {
     flex: 1,
@@ -923,8 +812,6 @@ const styles = StyleSheet.create({
   },
   seeAllText: { fontSize: 13, fontWeight: "700", color: colors.greenDark },
   packageList: { gap: 10, marginBottom: 24 },
-  detailActionRow: { flexDirection: "row", gap: 10, marginTop: 20 },
-  detailButtonFlex: { flex: 1, marginTop: 0 },
   detailButton: {
     backgroundColor: colors.green,
     borderRadius: radius.sm,
@@ -934,16 +821,6 @@ const styles = StyleSheet.create({
   },
   detailButtonPressed: { backgroundColor: colors.greenDark },
   detailButtonText: { color: colors.white, fontWeight: "700" },
-  detailSecondaryButton: {
-    backgroundColor: colors.white,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.sm,
-    paddingVertical: 12,
-    alignItems: "center",
-  },
-  detailSecondaryPressed: { backgroundColor: colors.card },
-  detailSecondaryText: { color: colors.text, fontWeight: "700" },
   detailCashButton: { alignItems: "center", paddingVertical: 10, marginTop: 6 },
   detailCashText: { color: colors.textMuted, fontWeight: "600", fontSize: 13 },
   detailSectionLabel: {

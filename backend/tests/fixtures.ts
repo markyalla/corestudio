@@ -13,7 +13,6 @@ export async function resetDb() {
   await prisma.trainerUnavailability.deleteMany();
   await prisma.member.deleteMany();
   await prisma.trainer.deleteMany();
-  await prisma.membershipPlan.deleteMany();
   await prisma.perkItem.deleteMany();
   await prisma.otpCode.deleteMany();
   await prisma.user.deleteMany();
@@ -31,7 +30,7 @@ export async function makeStudio(cancelCutoffHours = 12) {
   });
 }
 
-export async function makeMember(opts: { creditsLeft?: number; walletGHS?: number } = {}) {
+export async function makeMember(opts: { walletGHS?: number } = {}) {
   const u = uniq();
   const user = await prisma.user.create({
     data: {
@@ -45,7 +44,6 @@ export async function makeMember(opts: { creditsLeft?: number; walletGHS?: numbe
   return prisma.member.create({
     data: {
       userId: user.id,
-      creditsLeft: opts.creditsLeft ?? 0,
       walletGHS: opts.walletGHS ?? 0,
     },
     include: { user: true },

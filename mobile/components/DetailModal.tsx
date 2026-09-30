@@ -3,9 +3,9 @@ import { Modal, View, Text, Pressable, ScrollView, StyleSheet } from "react-nati
 import { Ionicons } from "@expo/vector-icons";
 import { colors, radius, shadow } from "@/lib/theme";
 
-/** Bottom-sheet "what does this cover" detail view — shared by Plan and
- *  Package cards across Home, Profile, Plans and Packages so tapping any of
- *  them shows the same full picture (price, what's included, perks). */
+/** Bottom-sheet "what does this cover" detail view — shared by Package cards
+ *  across Home and Packages so tapping any of them shows the same full
+ *  picture (price, what's included, perks). */
 export function DetailModal({
   visible,
   onClose,
@@ -13,6 +13,7 @@ export function DetailModal({
   price,
   metaLines,
   description,
+  classNames,
   perks,
   children,
 }: {
@@ -22,8 +23,12 @@ export function DetailModal({
   price?: string;
   metaLines: string[];
   description?: string;
+  /** Names of the class types a multi-class package covers — shown as its
+   *  own bulleted section. Omit (or pass a single-item array) when a
+   *  description already says it all. */
+  classNames?: string[];
   perks: string[];
-  /** Extra content (e.g. Renew/Change-plan buttons, a package's bookable
+  /** Extra content (e.g. Buy/Pay-cash buttons, a package's bookable
    *  sessions) rendered between perks and the Close button. */
   children?: ReactNode;
 }) {
@@ -43,6 +48,18 @@ export function DetailModal({
             ))}
 
             {!!description && <Text style={styles.description}>{description}</Text>}
+
+            {!!classNames && classNames.length > 1 && (
+              <>
+                <Text style={styles.sectionLabel}>Classes covered</Text>
+                {classNames.map((name) => (
+                  <View key={name} style={styles.perkRow}>
+                    <Ionicons name="checkmark-circle" size={18} color={colors.green} />
+                    <Text style={styles.perkText}>{name}</Text>
+                  </View>
+                ))}
+              </>
+            )}
 
             {perks.length > 0 && (
               <>

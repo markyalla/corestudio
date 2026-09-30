@@ -12,22 +12,18 @@ export default async function MemberDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const [member, plans] = await Promise.all([
-    prisma.member.findUnique({
-      where: { id },
-      include: {
-        user: true,
-        plan: true,
-        bookings: {
-          include: { session: { include: { classType: true, trainer: { include: { user: true } } } } },
-          orderBy: { createdAt: "desc" },
-          take: 50,
-        },
-        payments: { orderBy: { createdAt: "desc" }, take: 20 },
+  const member = await prisma.member.findUnique({
+    where: { id },
+    include: {
+      user: true,
+      bookings: {
+        include: { session: { include: { classType: true, trainer: { include: { user: true } } } } },
+        orderBy: { createdAt: "desc" },
+        take: 50,
       },
-    }),
-    prisma.membershipPlan.findMany({ where: { active: true } }),
-  ]);
+      payments: { orderBy: { createdAt: "desc" }, take: 20 },
+    },
+  });
   if (!member) notFound();
 
   return (
@@ -50,11 +46,9 @@ export default async function MemberDetailPage({
 
       <div className="mt-6 grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3">
             {[
-              ["Plan", member.plan?.name ?? "—"],
               ["Status", member.status],
-              ["Classes left", String(member.creditsLeft)],
               ["Wallet", formatGHS(member.walletGHS)],
             ].map(([label, value]) => (
               <div key={label} className="rounded-2xl bg-white p-4 shadow-sm">
@@ -121,8 +115,7 @@ export default async function MemberDetailPage({
 
         <MemberEditPanel
           memberId={member.id}
-          current={{ planId: member.planId, status: member.status, creditsLeft: member.creditsLeft }}
-          plans={JSON.parse(JSON.stringify(plans))}
+          current={{ status: member.status }}
         />
       </div>
     </main>

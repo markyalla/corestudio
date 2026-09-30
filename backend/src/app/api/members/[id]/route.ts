@@ -24,23 +24,10 @@ export const PATCH = apiHandler(
         });
       }
 
-      // Plan change: reset credits to the new plan's allowance
-      let planChange: { planId: string | null; creditsLeft?: number } | null = null;
-      if (body.planId !== undefined) {
-        if (body.planId === null) {
-          planChange = { planId: null };
-        } else {
-          const plan = await tx.membershipPlan.findUniqueOrThrow({ where: { id: body.planId } });
-          planChange = { planId: plan.id, creditsLeft: plan.classesPerCycle + plan.bonusCredits };
-        }
-      }
-
       const result = await tx.member.update({
         where: { id },
         data: {
-          ...(planChange ?? {}),
           ...(body.status ? { status: body.status } : {}),
-          ...(body.creditsLeft !== undefined ? { creditsLeft: body.creditsLeft } : {}),
           ...(body.walletAdjustGHS
             ? { walletGHS: { increment: body.walletAdjustGHS } }
             : {}),

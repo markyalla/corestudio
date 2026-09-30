@@ -113,7 +113,6 @@ export default async function TimetablePage({
           members.map((m) => ({
             id: m.id,
             name: m.user.name,
-            creditsLeft: m.creditsLeft,
             status: m.status,
           })),
         ),

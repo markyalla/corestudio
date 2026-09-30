@@ -1,7 +1,6 @@
 import { prisma } from "./prisma";
 import { promoteWaitlist } from "./booking";
 import { getNotificationService } from "./notifications";
-import { formatGHS } from "./money";
 
 const DAY = 24 * 60 * 60 * 1000;
 // How far ahead sessions are pre-generated from recurrence rules. Kept a bit
@@ -151,58 +150,11 @@ export async function expireWaitlistOffers(): Promise<number> {
   return expired.length;
 }
 
-/**
- * Rule 6: on cycleRenewsAt, reset credits only when a renewal Payment is
- * CONFIRMED (covers manual cash renewals recorded at the desk — Paystack
- * renewals already reset via webhook). Unpaid after a 3-day grace → FROZEN.
- */
-export async function processPlanCycles(): Promise<{ renewed: number; frozen: number }> {
-  const now = new Date();
-  const due = await prisma.member.findMany({
-    where: { status: "ACTIVE", cycleRenewsAt: { lte: now }, planId: { not: null } },
-    include: { plan: true },
-  });
-
-  let renewed = 0;
-  let frozen = 0;
-  for (const member of due) {
-    const plan = member.plan!;
-    // A confirmed renewal payment made since the last cycle started
-    const payment = await prisma.payment.findFirst({
-      where: {
-        memberId: member.id,
-        status: "CONFIRMED",
-        amountGHS: { gte: plan.priceGHS },
-        description: { contains: "renew", mode: "insensitive" },
-        createdAt: { gte: new Date(member.cycleRenewsAt!.getTime() - plan.cycleDays * DAY) },
-      },
-    });
-
-    if (payment) {
-      await prisma.member.update({
-        where: { id: member.id },
-        data: {
-          creditsLeft: plan.classesPerCycle + plan.bonusCredits,
-          cycleRenewsAt: new Date(member.cycleRenewsAt!.getTime() + plan.cycleDays * DAY),
-        },
-      });
-      renewed++;
-    } else if (now.getTime() - member.cycleRenewsAt!.getTime() > 3 * DAY) {
-      await prisma.member.update({ where: { id: member.id }, data: { status: "FROZEN" } });
-      await prisma.auditLog.create({
-        data: { action: "member.frozen_unpaid", entity: "Member", entityId: member.id },
-      });
-      frozen++;
-    }
-  }
-  return { renewed, frozen };
-}
-
-/** Rule 7: booking reminders 24h and 2h out; renewal reminder 3 days before. */
-export async function sendReminders(): Promise<{ h24: number; h2: number; renewal: number }> {
+/** Rule 7: booking reminders 24h and 2h out. */
+export async function sendReminders(): Promise<{ h24: number; h2: number }> {
   const sms = getNotificationService();
   const now = new Date();
-  const counts = { h24: 0, h2: 0, renewal: 0 };
+  const counts = { h24: 0, h2: 0 };
 
   for (const [field, horizon] of [
     ["reminder24At", 24 * 60 * 60 * 1000],
@@ -237,25 +189,6 @@ export async function sendReminders(): Promise<{ h24: number; h2: number; renewa
     }
   }
 
-  const renewals = await prisma.member.findMany({
-    where: {
-      status: "ACTIVE",
-      planId: { not: null },
-      cycleRenewsAt: { gt: now, lte: new Date(now.getTime() + 3 * DAY) },
-      OR: [{ renewalReminderAt: null }, { renewalReminderAt: { lt: new Date(now.getTime() - 7 * DAY) } }],
-    },
-    include: { user: true, plan: true },
-  });
-  for (const m of renewals) {
-    if (m.user.phone) {
-      await sms.sendSms(
-        m.user.phone,
-        `Your ${m.plan!.name} plan renews on ${m.cycleRenewsAt!.toISOString().slice(0, 10)} (${formatGHS(m.plan!.priceGHS)}). Renew in the app or at the front desk.`,
-      );
-    }
-    await prisma.member.update({ where: { id: m.id }, data: { renewalReminderAt: now } });
-    counts.renewal++;
-  }
   return counts;
 }
 
@@ -264,7 +197,6 @@ export async function runAllJobs() {
     sessionsGenerated: await generateSessions(),
     ...(await completeSessions()),
     waitlistOffersExpired: await expireWaitlistOffers(),
-    ...(await processPlanCycles()),
     reminders: await sendReminders(),
   };
 }

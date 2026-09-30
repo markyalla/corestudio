@@ -15,14 +15,13 @@ const schema = z.object({
   photoDataUrl: z.string().optional(),
 });
 
-/** Member profile + plan + wallet + recent payment history. */
+/** Member profile + wallet + recent payment history. */
 export const GET = apiHandler(async (req: Request) => {
   const auth = await requireMobileAuth(req, "ANY");
   const member = await prisma.member.findFirst({
     where: { userId: auth.user.id },
     include: {
       user: true,
-      plan: { include: { perks: { where: { active: true } } } },
       preferredLocation: true,
       payments: { orderBy: { createdAt: "desc" }, take: 15 },
     },
@@ -32,7 +31,7 @@ export const GET = apiHandler(async (req: Request) => {
   }
 
   // Payment <-> Booking isn't a direct relation (a payment can also be a
-  // plan renewal, with no booking at all) — link them by their shared
+  // package purchase, with no booking at all) — link them by their shared
   // Paystack reference so the payment detail screen can show whether the
   // class it paid for is still booked or was since cancelled.
   const refs = member.payments.map((p) => p.paystackRef).filter((r): r is string => !!r);
@@ -48,9 +47,7 @@ export const GET = apiHandler(async (req: Request) => {
     member: {
       id: member.id,
       status: member.status,
-      creditsLeft: member.creditsLeft,
       walletGHS: member.walletGHS,
-      cycleRenewsAt: member.cycleRenewsAt,
       joinedAt: member.joinedAt,
       photoUrl: member.photoUrl,
       location: member.preferredLocation
@@ -58,18 +55,6 @@ export const GET = apiHandler(async (req: Request) => {
         : null,
     },
     user: { name: member.user.name, email: member.user.email, phone: member.user.phone },
-    plan: member.plan
-      ? {
-          id: member.plan.id,
-          name: member.plan.name,
-          priceGHS: member.plan.priceGHS,
-          classesPerCycle: member.plan.classesPerCycle,
-          bonusCredits: member.plan.bonusCredits,
-          cycleDays: member.plan.cycleDays,
-          description: member.plan.description,
-          perks: member.plan.perks.map((perk) => perk.name),
-        }
-      : null,
     payments: member.payments.map((p) => {
       const booking = p.paystackRef ? bookingByRef.get(p.paystackRef) : undefined;
       return {

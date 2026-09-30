@@ -17,8 +17,6 @@ export interface ProgressStats {
   attendanceRate: number | null; // 0..1 over the recent window, null if no data
   perWeek: number; // avg attended / week over the recent window
   upcoming: number;
-  creditsLeft: number;
-  daysToRenewal: number | null;
 }
 
 export interface Progress {
@@ -62,7 +60,7 @@ function tierCopy(tier: ProgressTier, s: ProgressStats): { headline: string; mes
         message: `${s.attendedTotal} classes in the bank and a ${s.streakWeeks}-week streak. This is exactly how it's done — keep showing up.`,
         tips: [
           s.upcoming === 0 ? "Lock in your next class now to protect the streak." : "Next class is booked — nice.",
-          s.daysToRenewal !== null && s.daysToRenewal <= 5 ? "Your plan renews soon — renew early so you don't lose momentum." : "Aim to keep 2+ classes a week.",
+          "Aim to keep 2+ classes a week.",
         ],
       };
     case "ON_TRACK":
@@ -79,11 +77,11 @@ function tierCopy(tier: ProgressTier, s: ProgressStats): { headline: string; mes
         headline: "Let's get back to it",
         message:
           s.attendanceRate !== null && s.attendanceRate < 0.7
-            ? "You've missed a few classes you booked lately. Remember a no-show still uses a credit — cancel early if plans change."
+            ? "You've missed a few classes you booked lately. Remember a no-show still counts as a booking — cancel early if plans change."
             : "It's been a quiet couple of weeks. One class this week is all it takes to reset the habit.",
         tips: [
           "Book a class you know you can make — morning slots are easiest to keep.",
-          s.creditsLeft > 0 ? `You still have ${s.creditsLeft} class${s.creditsLeft === 1 ? "" : "es"} on your plan — use them before they cycle.` : "Top up your plan and pick a time that fits your week.",
+          "Check your packages for sessions you can use this week.",
         ],
       };
     case "INACTIVE":
@@ -91,7 +89,7 @@ function tierCopy(tier: ProgressTier, s: ProgressStats): { headline: string; mes
         headline: "We've missed you",
         message: "It's been over a month since your last class. Your spot is still here whenever you're ready — start small.",
         tips: [
-          s.creditsLeft > 0 ? `You have ${s.creditsLeft} unused class${s.creditsLeft === 1 ? "" : "es"} waiting.` : "Grab a single class to ease back in — no plan needed.",
+          "Grab a single class to ease back in — no big commitment needed.",
           "Book something gentle for later this week and just show up.",
         ],
       };
@@ -151,9 +149,6 @@ export async function computeProgress(memberId: string): Promise<Progress> {
     recentAttended + recentNoShow > 0 ? recentAttended / (recentAttended + recentNoShow) : null;
   const perWeek = recentAttended / 8;
   const streakWeeks = attendanceStreak(attendedDates, now);
-  const daysToRenewal = member.cycleRenewsAt
-    ? Math.max(0, Math.ceil((member.cycleRenewsAt.getTime() - now.getTime()) / DAY))
-    : null;
 
   const stats: ProgressStats = {
     attendedTotal,
@@ -162,8 +157,6 @@ export async function computeProgress(memberId: string): Promise<Progress> {
     attendanceRate,
     perWeek,
     upcoming,
-    creditsLeft: member.creditsLeft,
-    daysToRenewal,
   };
 
   let tier: ProgressTier;

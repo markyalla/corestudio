@@ -35,7 +35,7 @@ type ClassTypeRow = {
   defaultTrainerId: string | null;
 };
 type TrainerOpt = { id: string; name: string; color: string; ptRateGHS: number };
-type MemberOpt = { id: string; name: string; creditsLeft: number; status: string };
+type MemberOpt = { id: string; name: string; status: string };
 type LocationOpt = { id: string; name: string };
 type UnavailabilityRow = { trainerId: string; date: string };
 
@@ -300,7 +300,7 @@ function RosterDrawer(props: {
 }) {
   const s = props.session;
   const [memberQuery, setMemberQuery] = useState("");
-  const [paidWith, setPaidWith] = useState("CREDIT");
+  const [paidWith, setPaidWith] = useState("CASH");
   const [editing, setEditing] = useState(false);
   const active = s.bookings.filter((b) => b.status !== "CANCELLED");
   const matches = memberQuery
@@ -401,7 +401,6 @@ function RosterDrawer(props: {
               onChange={(e) => setPaidWith(e.target.value)}
               className="mt-2 w-full rounded-lg border border-stone-300 px-3 py-2 text-sm"
             >
-              <option value="CREDIT">Plan credit</option>
               <option value="PACKAGE">Package</option>
               <option value="CASH">Cash</option>
               <option value="MOMO">MoMo (manual)</option>
@@ -420,9 +419,7 @@ function RosterDrawer(props: {
                     className="w-full rounded-lg border border-stone-200 px-3 py-2 text-left text-sm hover:bg-stone-50"
                   >
                     {m.name}
-                    <span className="ml-2 text-xs text-stone-400">
-                      {m.status} · {m.creditsLeft} classes left
-                    </span>
+                    <span className="ml-2 text-xs text-stone-400">{m.status}</span>
                   </button>
                 </li>
               ))}
@@ -431,7 +428,7 @@ function RosterDrawer(props: {
             <div className="mt-8 flex gap-2">
               <button
                 onClick={() => {
-                  if (confirm("Cancel this session and refund every member (credit back, or cash back to their wallet)?")) {
+                  if (confirm("Cancel this session and refund every member (package sessions given back, paid amounts credited to their wallet)?")) {
                     props.onAction(() => api(`/api/sessions/${s.id}`, "PATCH", { action: "CANCEL", mode: "REFUND" }));
                   }
                 }}
@@ -441,7 +438,7 @@ function RosterDrawer(props: {
               </button>
               <button
                 onClick={() => {
-                  if (confirm("Cancel this session and give every member a free class credit to rebook another time (no cash refund)?")) {
+                  if (confirm("Cancel this session and give every member a wallet credit to rebook another time (no cash refund)?")) {
                     props.onAction(() => api(`/api/sessions/${s.id}`, "PATCH", { action: "CANCEL", mode: "RESCHEDULE" }));
                   }
                 }}

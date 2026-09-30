@@ -82,7 +82,7 @@ export const GET = apiHandler(async (req: Request) => {
 });
 
 /** Member self-booking. Picks the payment source per business rule 1:
- *  plan credit → wallet → Paystack (Phase 4). Full sessions become WAITLIST. */
+ *  package → wallet → Paystack (Phase 4). Full sessions become WAITLIST. */
 export const POST = apiHandler(async (req: Request) => {
   const auth = await requireMobileAuth(req, ["MEMBER"]);
   const { sessionId, method } = schema.parse(await req.json());
@@ -125,7 +125,7 @@ export const POST = apiHandler(async (req: Request) => {
     (await prisma.memberPackage.count({
       where: {
         memberId: member.id,
-        package: { classTypeId: session.classTypeId },
+        package: { classTypes: { some: { id: session.classTypeId } } },
         sessionsLeft: { gt: 0 },
         expiresAt: { gt: new Date() },
       },
@@ -133,13 +133,9 @@ export const POST = apiHandler(async (req: Request) => {
 
   let paidWith: PaymentMethod;
   if (isFull) {
-    paidWith = "CREDIT"; // irrelevant — bookSession waitlists before charging
+    paidWith = "COMP"; // irrelevant — bookSession waitlists before charging
   } else if (hasPackage) {
-    // A package is already paid for and scoped to this exact service — use
-    // it ahead of the generic plan credit.
     paidWith = "PACKAGE";
-  } else if (member.creditsLeft > 0) {
-    paidWith = "CREDIT";
   } else if (session.priceGHS === 0) {
     paidWith = "COMP";
   } else if (member.walletGHS >= session.priceGHS) {
@@ -148,7 +144,7 @@ export const POST = apiHandler(async (req: Request) => {
     // Rule 1: initialize a Paystack charge; the booking is created only when
     // the webhook (or verify fallback) confirms payment.
     if (member.status !== "ACTIVE") {
-      throw new ApiError(400, "Membership is not active — renew to book");
+      throw new ApiError(400, "Membership is not active — contact the studio");
     }
     const { authorizationUrl, reference } = await startBookingCheckout({
       member,
