@@ -2,6 +2,15 @@
 
 _A studio management platform for a pilates studio in Accra, Ghana. Built July 2026._
 
+> **Note (2026-09-30):** this document describes the system as built in July
+> 2026. Membership plans and their recurring credits (referenced throughout
+> §4–6 below) were **removed** in a later phase — packages are now the only
+> prepaid/bundled way for a member to book, and there is no `CREDIT` payment
+> path, no `MembershipPlan` model, and no auto-renew/auto-freeze cron. See
+> [DATA-MODEL.md](DATA-MODEL.md), [API.md](API.md), and
+> [HOW-IT-WORKS.md](HOW-IT-WORKS.md) for the current behavior; the plan/credit
+> details below are kept as a historical record of what shipped at launch.
+
 ## 1. What it is
 
 CoreStudio replaces spreadsheet-and-WhatsApp studio administration with one

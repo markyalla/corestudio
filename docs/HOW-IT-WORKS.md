@@ -53,48 +53,44 @@ These two are completely independent — a staff member logging into `admin`
 and a member logging into `mobile` are unrelated events, even if (in theory)
 the same person had both a staff and a member account.
 
-## Membership plans vs. single-class bookings — the thing that's confusing
+## Booking payment order (rewritten 2026-09-30 — membership plans removed)
 
-These are **two separate concepts** that both happen to involve money:
+Membership plans (recurring credit subscriptions) have been removed
+entirely — there is no more `MembershipPlan` model, no `Member.creditsLeft`,
+no auto-renew/auto-freeze cron, and no `CREDIT` payment path. **Packages are
+now the only prepaid/bundled way to book.** A `Package` grants a pool of
+sessions (`sessionsGranted`, expiring after `validDays`) covering one or more
+class types; a member's purchased copy is a `MemberPackage`.
 
-1. **A `MembershipPlan`** (e.g. "Unlimited", "8-classes-a-month") is a
-   recurring bucket of credits a member is subscribed to. It has
-   `creditsPerCycle` (how many classes it includes) and `cycleDays` (usually
-   30 — i.e. "a month"). A member can pick one themselves from the mobile
-   **Plans** screen (`mobile/app/plans.tsx`, reached from Home), or staff can
-   assign one via the admin Members page — both paths end up doing the same
-   thing (see "Buying or switching a plan" below). Once a member has a plan,
-   tapping **Renew** in the app (Profile tab) pays for *another cycle* of
-   that same plan and adds another batch of credits.
+**Booking a class** (Timetable → tap a class → Book) is always booking *that
+one session, on that one day, at that one time*. What it *costs* the member
+depends on what they have available, checked in this order (see
+`backend/src/app/api/app/bookings/route.ts`):
+- A `MemberPackage` covering this session's class type, with sessions left
+  and not expired → draws 1 session from it, no charge.
+- The class is free → free.
+- Their wallet balance covers it → paid from wallet, no new charge.
+- Otherwise → a **one-off Paystack payment for just that class's price**.
 
-2. **Booking a class** (Timetable → tap a class → Book) is booking *that one
-   session, on that one day, at that one time*. It is not a subscription
-   action. What it *costs* the member depends on what they have available,
-   checked in this order (see `backend/src/app/api/app/bookings/route.ts`):
-   - They have plan credits left → uses **1 credit**, no charge.
-   - The class is free → free.
-   - Their wallet balance covers it → paid from wallet, no new charge.
-   - Otherwise → a **one-off Paystack payment for just that class's price**.
+So: a member with a matching package just taps Book and it silently draws
+from the package each time — no payment screen appears at all. A member with
+**no matching package** and no wallet balance will hit real Paystack
+checkout **every single time they book a class**. That's expected, not a
+bug — it's the pay-as-you-go fallback for people without a package.
 
-So: a member with an active "Unlimited" plan just taps Book and it silently
-consumes 1 credit each time — no payment screen appears at all. A member
-with **no plan** (like a brand-new signup) will hit real Paystack checkout
-**every single time they book a class**, because they have no credits and no
-wallet balance to draw from. That's expected, not a bug — it's the
-"pay-as-you-go" fallback for people without a subscription.
-
-**A booking never automatically "covers a month."** The only thing that
-represents "a month" is the plan's renewal cycle; individual bookings are
-always for one session.
+**A booking never automatically "covers a month."** There is no monthly
+concept anymore — a package just runs out or expires, whichever comes
+first.
 
 ## Booking + payment, end to end
 
-Walking through what happens when a no-plan member books a ¢150 class:
+Walking through what happens when a member with no matching package books a
+¢150 class:
 
 1. **Mobile** (`app/session/[id].tsx`) calls
    `POST /api/app/bookings { sessionId }` with their bearer token.
-2. **Backend** (`src/app/api/app/bookings/route.ts`) checks: full? has
-   credits? free? wallet covers it? None of those — so it calls
+2. **Backend** (`src/app/api/app/bookings/route.ts`) checks: full? matching
+   package? free? wallet covers it? None of those — so it calls
    `startBookingCheckout()` (`src/lib/payment-flows.ts`), which:
    - Creates a `Payment` row with `status: "PENDING"` and a fresh reference
      (e.g. `bk_a09da1...`).
@@ -149,45 +145,32 @@ that reference? `docker compose logs backend` will show a
 `Paystack verify failed` line if it did fire and Paystack rejected it, and
 you can call the same endpoint by hand with `curl` to reproduce.
 
-## Buying or switching a plan (updated 2026-08-05)
+## Buying a package (rewritten 2026-09-30)
 
-A member picks a plan on the mobile **Plans** screen and has two ways to pay
-for it — both end up calling the same activation logic, so the outcome is
-identical either way:
+A member picks a package on Home or the mobile **Packages** screen and has
+two ways to pay for it — both end up calling the same activation logic:
 
-1. **Pay with Paystack** — `POST /api/app/plans/:id/subscribe` with no body
-   starts a Paystack checkout, exactly like booking a class (same in-app
-   `CheckoutModal`, same webhook/verify race described above). On success,
-   `handleChargeSuccess()`'s `RENEWAL` branch fires.
-2. **Pay with cash** — `POST /api/app/plans/:id/subscribe { "method": "cash" }`
-   instead creates a `Payment` row with `status: "PENDING"`, `method: "CASH"`,
-   and `planId` set to the chosen plan — no Paystack involved at all. The
+1. **Pay with Paystack** — `POST /api/app/packages/:id/subscribe` with no
+   body starts a Paystack checkout, exactly like booking a class (same
+   in-app `CheckoutModal`, same webhook/verify race described above). On
+   success, `handleChargeSuccess()`'s `PACKAGE` branch fires.
+2. **Pay with cash** —
+   `POST /api/app/packages/:id/subscribe { "method": "cash" }` instead
+   creates a `Payment` row with `status: "PENDING"`, `method: "CASH"`, and
+   `packageId` set to the chosen package — no Paystack involved at all. The
    member sees "show up and pay in person." That payment then sits on the
    admin **Payments** page with a **"Confirm cash received"** button (only
    shown for pending cash rows). When a staff member taps it — after the
    member has actually paid at the front desk —
    `POST /api/payments/:id/confirm-cash` flips the payment to `CONFIRMED`.
 
-Both paths converge on the same function, **`activateMembership()`**
-(`backend/src/lib/payment-flows.ts`): it sets `Member.planId` to the chosen
-plan, sets status to `ACTIVE`, and — this is the important part —
-**increments `creditsLeft` by the plan's `creditsPerCycle` instead of
-overwriting it.** So switching plans, renewing early, or re-subscribing
-while credits are still left never wipes out unused credits; it stacks on
-top. `cycleRenewsAt` extends from whichever is later: the member's current
-renewal date (if still in the future) or now.
-
-Staff can also assign/change a plan directly from a member's admin detail
-page with no payment involved at all (`PATCH /api/members/:id`,
-`admin/src/app/admin/members/member-forms.tsx`'s "Plan & status" editor).
-That path does **not** go through `activateMembership()` — it's a manual
-override, and unlike the two payment-driven paths above it **overwrites**
-`creditsLeft` to the new plan's `creditsPerCycle` rather than adding to it
-(`backend/src/app/api/members/[id]/route.ts`). That's intentional: it's for
-staff directly correcting/setting a member's state ("this person should
-just have exactly N credits on this plan"), not for recording a purchase —
-if you want the additive behavior, the payment paths above are the ones to
-use.
+Both paths converge on **`activatePackage()`**
+(`backend/src/lib/payment-flows.ts`): it creates a fresh `MemberPackage`
+with `sessionsLeft: pkg.sessionsGranted` and `expiresAt` set `validDays` out
+from now. Buying a second copy of the same package (or a different one)
+never touches an existing `MemberPackage` — each purchase is its own
+independent bundle with its own expiry, and booking draws from
+whichever one expires soonest.
 
 ## Cancelling and the waitlist
 
@@ -199,10 +182,10 @@ use.
   `src/lib/booking.ts`). Staff booking someone in at the front desk (admin
   portal) bypasses this — the cutoff only applies to members self-booking.
 - If a class is full, booking puts the member on the `WAITLIST` instead.
-  When a spot opens (someone cancels), `promoteWaitlist()` either
-  auto-confirms the next person (if they have credits) or SMS's them a
-  2-hour payment window to claim it — which is the same Paystack checkout
-  flow as above, just triggered by `POST /api/app/bookings/:id/claim`.
+  When a spot opens (someone cancels), `promoteWaitlist()` SMS's the next
+  person a 2-hour payment window to claim it — which is the same Paystack
+  checkout flow as above, just triggered by
+  `POST /api/app/bookings/:id/claim`.
 
 ## One studio only, for now — no multi-owner isolation
 
@@ -243,8 +226,8 @@ the fuller breakdown of what that would take.
 | The Paystack checkout UI on the phone | `mobile/components/CheckoutModal.tsx` |
 | How long before class booking closes | `Studio.bookingCutoffMinutes` (Prisma) — currently only settable via DB/seed, not yet an admin UI field |
 | What a member sees in Payment history | `backend/src/app/api/app/profile/route.ts` (GET), `mobile/app/payment/[id].tsx` |
-| Buying/switching a plan on mobile | `mobile/app/plans.tsx`, `backend/src/app/api/app/plans/[id]/subscribe/route.ts` |
-| Plan/cash activation logic (shared) | `activateMembership()` in `backend/src/lib/payment-flows.ts` |
+| Buying a package on mobile | `mobile/app/packages.tsx`, `mobile/app/(tabs)/home.tsx`, `backend/src/app/api/app/packages/[id]/subscribe/route.ts` |
+| Package/cash activation logic (shared) | `activatePackage()` in `backend/src/lib/payment-flows.ts` |
 | Confirming a pending cash payment | `backend/src/app/api/payments/[id]/confirm-cash/route.ts`, `admin/src/app/admin/payments/confirm-cash-button.tsx` |
 | Staff-side payments list | `admin/src/app/admin/payments/page.tsx` |
 | Mobile login/signup | `mobile/app/login.tsx`, `mobile/app/signup.tsx`, `backend/src/lib/mobile-auth.ts` |

@@ -111,13 +111,14 @@ Expo reconcile the declared package versions against the SDK it resolves.
   `GHS` suffix from the domain spec; `formatGHS`/`parseGHS` in
   `backend/src/lib/money.ts` convert for display/input — `mobile/lib/money.ts`
   mirrors the display half on-device). No floats.
-- **Booking engine** (`backend/src/lib/booking.ts`): credits → wallet →
-  Paystack; full sessions waitlist; cancellation refunds (credit back, or
-  paid amount to wallet); waitlist promotion (auto via credit, else a 2-hour
-  payment window). All mutations run in transactions with a `FOR UPDATE`
-  lock on the session row, and every mutation writes an `AuditLog` row.
+- **Booking engine** (`backend/src/lib/booking.ts`): package → wallet →
+  Paystack; full sessions waitlist; cancellation refunds paid amounts to the
+  wallet (a package session goes back to the package instead); waitlist
+  promotion always opens a 2-hour payment window. All mutations run in
+  transactions with a `FOR UPDATE` lock on the session row, and every
+  mutation writes an `AuditLog` row.
 - **Payments** (`backend/src/lib/payment-flows.ts`): Paystack checkout for
-  bookings, renewals and waitlist claims. The webhook
+  bookings, package purchases and waitlist claims. The webhook
   (`/api/webhooks/paystack`) verifies the HMAC-SHA512 signature and is
   idempotent (keyed on `Payment.paystackRef`); `GET /api/app/pay/verify`
   (called by the mobile app) and the browser-facing
@@ -134,9 +135,8 @@ Expo reconcile the declared package versions against the SDK it resolves.
   `Authorization: Bearer $CRON_SECRET`): generate sessions 4 weeks ahead from
   weekly recurrence rules, auto-complete finished sessions (un-checked
   bookings → NO_SHOW), expire 2-hour waitlist offers and promote the next
-  member, renew/freeze plan cycles (3-day grace), and send 24h/2h booking
-  reminders plus 3-day renewal reminders. The compose stack's cron container
-  hits `backend` directly (not through `admin`) every 5 minutes.
+  member, and send 24h/2h booking reminders. The compose stack's cron
+  container hits `backend` directly (not through `admin`) every 5 minutes.
 - **SMS** is abstracted behind `NotificationService`
   (`backend/src/lib/notifications`): `arkesel`, `hubtel`, or `console` (dev).
 - **Timezone**: Africa/Accra is UTC+0, so times are stored and rendered in
@@ -235,10 +235,10 @@ per-app dev vars are in `backend/.env.example`, `admin/.env.example`, and
 ## Testing
 
 - `npm test` (from the repo root, or inside `backend/`) — Vitest tests
-  covering the critical business rules: credit consumption, waitlist
-  promotion order, payout exclusion of already-paid bookings, and
-  cancellation-cutoff enforcement. They run against a separate
-  `corestudio_test` database (created automatically).
+  covering the critical business rules: waitlist promotion order, payout
+  exclusion of already-paid bookings, and cancellation-cutoff enforcement.
+  They run against a separate `corestudio_test` database (created
+  automatically).
 - The old Playwright browser E2E test drove the `/app` PWA directly and no
   longer applies now that member booking happens in `mobile/`. There's no
   automated E2E coverage for the booking flow yet — validate it by running

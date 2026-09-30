@@ -25,30 +25,31 @@ Roles column: **O**=OWNER, **A**=ADMIN, **T**=TRAINER, **M**=MEMBER,
 
 | Method | Path | Roles | Body / notes |
 | --- | --- | --- | --- |
-| POST | `/api/app/bookings` | M | `{ sessionId, method? }`. Default: credits → wallet → Paystack (`200 { authorizationUrl }`) → `201 { booking }`. `method: "cash"` → `201 { booking, cash: true }` with a PENDING cash Payment for staff to confirm |
-| PATCH | `/api/app/bookings/[id]` | M (owner) | `{ action: "CANCEL" }` — enforced against `cancelCutoffHours`; refunds credit or wallet |
-| POST | `/api/app/renew` | M | `{ method? }` → `{ authorizationUrl }` Paystack checkout, or `{ cash: true, paymentId }` with `method: "cash"` (staff confirm) |
+| POST | `/api/app/bookings` | M | `{ sessionId, method? }`. Default: matching package → wallet → Paystack (`200 { authorizationUrl }`) → `201 { booking }`. `method: "cash"` → `201 { booking, cash: true }` with a PENDING cash Payment for staff to confirm |
+| PATCH | `/api/app/bookings/[id]` | M (owner) | `{ action: "CANCEL" }` — enforced against `cancelCutoffHours`; refunds to the wallet (a package session goes back to the package) |
 | GET | `/api/app/pay/verify?reference=` | any | Verifies a Paystack reference and fulfils it if paid (idempotent with the webhook) |
 | GET | `/api/app/progress` | M | Attendance stats + a tier (`GETTING_STARTED\|THRIVING\|ON_TRACK\|SLIPPING\|INACTIVE`) with `headline`, `message`, `tips[]` for the Home screen |
 | GET | `/api/app/motivation` | M | `{ text }` — today's motivational line (rotates one per calendar day through the active pool); `text` is null when the pool is empty |
 | GET | `/api/app/pt` | M | Private-class offerings: one entry per trainer with active windows, each with the concrete days + open time ranges (booked slots and clashing classes already subtracted). Filtered to the member's preferred location |
-| POST | `/api/app/pt/book` | M | `{ trainerId, date, startTime, method? }` — creates a PT session at the chosen time inside a window, then pays (credit → wallet → Paystack, or `method:"cash"`). **409** if the slot was taken by another member or now clashes with a class — pick another time |
+| POST | `/api/app/pt/book` | M | `{ trainerId, date, startTime, method? }` — creates a PT session at the chosen time inside a window, then pays (wallet → Paystack, or `method:"cash"`). **409** if the slot was taken by another member or now clashes with a class — pick another time |
+| GET | `/api/app/packages` | M | Purchasable packages (each can cover more than one class type, sharing one pool of sessions) plus the member's own active ones |
+| POST | `/api/app/packages/[id]/subscribe` | M | `{ method? }` → `{ authorizationUrl }` Paystack checkout, or `{ cash: true, paymentId }` with `method: "cash"` (staff confirm) |
 
 ## Staff — sessions & bookings
 
 | Method | Path | Roles | Body / notes |
 | --- | --- | --- | --- |
 | POST | `/api/sessions` | O A | `{ kind, classTypeId?, trainerId, startsAt, durationMins, capacity, priceGHS, recurring }`. `recurring: true` creates a weekly `RecurrenceRule` + 4 weeks of sessions |
-| PATCH | `/api/sessions/[id]` | O A | `{ action: "CANCEL", mode?: "REFUND" \| "RESCHEDULE" }` (default `REFUND`) — releases every booking and SMS's members; `REFUND` returns credit/wallet, `RESCHEDULE` grants a class credit instead of cash back |
-| POST | `/api/bookings` | O A | Front-desk booking: `{ sessionId, memberId, paidWith }` (`CREDIT/CASH/MOMO/CARD/COMP`); wallet applies first on money methods |
+| PATCH | `/api/sessions/[id]` | O A | `{ action: "CANCEL", mode?: "REFUND" \| "RESCHEDULE" }` (default `REFUND`) — releases every booking and SMS's members; both modes credit the wallet for paid amounts (worded as a refund vs. a credit to rebook), a package session always goes back to the package |
+| POST | `/api/bookings` | O A | Front-desk booking: `{ sessionId, memberId, paidWith }` (`PACKAGE/CASH/MOMO/CARD/COMP`); wallet applies first on money methods |
 | PATCH | `/api/bookings/[id]` | O A T | `{ action: "CHECK_IN" \| "NO_SHOW" \| "CANCEL" }` |
 
 ## Staff — people & money
 
 | Method | Path | Roles | Body / notes |
 | --- | --- | --- | --- |
-| POST | `/api/members` | O A | `{ name, email, phone, planId?, password }` — owner/admin sets the password; credits set from plan |
-| PATCH | `/api/members/[id]` | O A | `{ name?, phone?, planId?, status?, creditsLeft?, walletAdjustGHS? }` — plan change resets credits; wallet adjust is a ± pesewas increment |
+| POST | `/api/members` | O A | `{ name, email, phone, password }` — owner/admin sets the password |
+| PATCH | `/api/members/[id]` | O A | `{ name?, phone?, status?, walletAdjustGHS? }` — wallet adjust is a ± pesewas increment |
 | POST | `/api/trainers` | O A | `{ name, email, phone, password, specialty?, commissionPercent?, ptCommissionPercent?, ptRateGHS?, calendarColor?, bio? }` |
 | PATCH | `/api/trainers/[id]` | O A | Any of the trainer profile fields |
 | GET / POST / PATCH | `/api/trainers/[id]/pt-windows` | O A | Private-class availability windows: `{ dayOfWeek, startTime, endTime, locationId, durationMins?, title?, priceGHS? }`. **409** if the window overlaps a class the trainer is assigned that weekday, or another of their windows. Staff-only — trainers no longer self-manage this (see `/api/trainer-requests`) |
@@ -65,7 +66,7 @@ Roles column: **O**=OWNER, **A**=ADMIN, **T**=TRAINER, **M**=MEMBER,
 | Method | Path | Roles | Body / notes |
 | --- | --- | --- | --- |
 | PATCH | `/api/settings` | O A | `{ name?, momoNumber?, advanceBookingDays?, cancelCutoffHours? }` |
-| POST / PATCH | `/api/plans` | O A | Create / update (`PATCH` takes `{ id, ...fields, active? }`) |
+| POST / PATCH | `/api/packages` | O A | Create / update (`PATCH` takes `{ id, ...fields, active? }`); `classTypeIds[]` covers one or more class types sharing one session pool |
 | POST / PATCH | `/api/class-types` | O A | Create / update (same pattern) |
 | POST / PATCH | `/api/motivation` | O A | Curate the daily-motivation pool. `POST { text }`; `PATCH { id, text?, active? }` |
 | POST | `/api/staff` | O only | `{ name, email, phone, role: ADMIN\|OWNER\|TRAINER, password }` — owner sets the password; the staffer changes it at `/set-password`. `TRAINER` also gets a default `Trainer` profile |

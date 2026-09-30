@@ -87,7 +87,7 @@ See [.env.example](../.env.example) — every variable is documented inline.
 | `EPERM … query_engine-windows.dll.node` during `prisma generate`/`migrate` | The dev server holds the engine DLL — stop `npm run dev`, rerun, restart |
 | Webhook returns 401 | `PAYSTACK_SECRET_KEY` mismatch — the signature is HMAC-SHA512 of the raw body with the **secret** key |
 | Paystack checkout 500s | Keys unset/invalid, or amount ≤ 0 (wallet already covers it) |
-| Members can't book, "frozen" | Renewal unpaid 3+ days past `cycleRenewsAt` — record the renewal payment (description containing "renew") or renew via the app, then the next cron run reactivates |
+| Members can't book, "frozen" | A staff member set their status to FROZEN (Admin → Members) — there's no more auto-freeze; reactivate by setting status back to ACTIVE |
 | No SMS arriving | `SMS_PROVIDER=console` (dev default) logs to stdout; for arkesel/hubtel check the provider key and registered sender ID |
 | Sessions not appearing beyond 2 weeks | Cron not running — check the `cron` container / your scheduler is POSTing `/api/cron` |
 | Prisma v7 upgrade prompt | **Don't** — the project pins v6; v7 moved datasource URLs out of the schema and requires driver adapters |
@@ -102,5 +102,4 @@ tolerance:
 | Session generation (4 weeks ahead) | None until the horizon shrinks below `advanceBookingDays` |
 | Auto-complete + NO_SHOW | Bookings stay BOOKED slightly longer; payout eligibility unaffected in practice |
 | Waitlist offer expiry | The next member's window opens late |
-| Plan cycles (renew/freeze) | Freeze happens on the first run after the 3-day grace |
-| Reminders 24h/2h/renewal | A reminder can arrive late; the 2h reminder window means runs must be ≤2h apart to guarantee delivery before class |
+| Reminders 24h/2h | A reminder can arrive late; the 2h reminder window means runs must be ≤2h apart to guarantee delivery before class |

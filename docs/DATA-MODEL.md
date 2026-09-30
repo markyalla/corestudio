@@ -19,7 +19,7 @@ Source of truth: [`prisma/schema.prisma`](../prisma/schema.prisma).
 | `SessionKind` | CLASS, PT | PT sessions have no class type, capacity 1 by convention |
 | `SessionStatus` | SCHEDULED, CANCELLED, COMPLETED | COMPLETED set by cron after end time |
 | `BookingStatus` | BOOKED, WAITLIST, ATTENDED, NO_SHOW, CANCELLED | See state machine below |
-| `PaymentMethod` | CREDIT, MOMO, CARD, CASH, COMP, **WALLET** | WALLET added beyond the spec: booking fully covered by wallet balance |
+| `PaymentMethod` | MOMO, CARD, CASH, COMP, WALLET, PACKAGE | WALLET: booking fully covered by wallet balance. PACKAGE: drawn from a MemberPackage. (`CREDIT` still exists in the DB enum for historical rows from the now-removed membership-plan feature — no code creates it anymore) |
 | `PaymentStatus` | PENDING, CONFIRMED, FAILED | PENDING rows are created at Paystack checkout time |
 | `PayoutStatus` | PENDING, PAID | PAID requires a manual MoMo transfer reference |
 
@@ -39,14 +39,11 @@ Single row. `name`, `currency` (GHS), `momoNumber`, `advanceBookingDays`
 Phone verification / password-reset codes: `phone`, `codeHash` (bcrypt),
 `purpose`, `expiresAt`, `usedAt`, `attempts`. Indexed on `(phone, purpose)`.
 
-### MembershipPlan
-`name`, `priceGHS`, `creditsPerCycle` (**999 = unlimited** sentinel),
-`cycleDays` (default 30), `description`, `active`.
-
 ### Member
-Profile for role=MEMBER users. `planId?`, `status`, `creditsLeft`,
-`walletGHS` (refund/credit balance, applied before any new charge),
-`cycleRenewsAt`, `renewalReminderAt` (reminder dedupe), `joinedAt`.
+Profile for role=MEMBER users. `status`, `walletGHS` (refund/credit
+balance, applied before any new charge), `joinedAt`. Members no longer have
+a recurring plan or credits — see `Package`/`MemberPackage` for the
+prepaid-session model, and `docs/API.md` for the booking payment cascade.
 
 ### Trainer
 Profile for role=TRAINER users. `specialty`, `commissionPercent` (integer
@@ -56,6 +53,20 @@ percent), `ptRateGHS` (default PT session price), `calendarColor`, `bio`,
 ### ClassType
 Template for classes: `name`, `durationMins`, `priceGHS` (drop-in price),
 `defaultCapacity`, `description`, `active`.
+
+### Package
+A one-time, non-renewing bundle of sessions: `name`, `sessionsGranted`,
+`priceGHS`, `validDays` (a member's copy expires this many days after
+purchase), `active`. `classTypes` is many-to-many — a package can cover one
+class type (e.g. a single service) or several, all sharing the same pool of
+sessions. This is the only prepaid/bundled way to book now that membership
+plans (and their recurring credits) have been removed.
+
+### MemberPackage
+A member's purchased copy of a `Package`: `memberId`, `packageId`,
+`sessionsLeft`, `purchasedAt`, `expiresAt`. Booking against it decrements
+`sessionsLeft` as long as the session's class type is one the package
+covers; cancelling gives the session back.
 
 ### RecurrenceRule
 Weekly timetable template: `dayOfWeek` (0=Sun…6=Sat), `time` ("HH:mm"),
@@ -72,7 +83,7 @@ idempotent; indexed on `startsAt` and `(trainerId, startsAt)`.
 
 ### Booking
 `sessionId`, `memberId`, `status`, `paidWith?`, `amountGHS` (full session
-price for money-paid bookings, 0 for CREDIT/COMP/WAITLIST), `paystackRef?`
+price for money-paid bookings, 0 for COMP/PACKAGE/WAITLIST), `paystackRef?`
 (unique), `promotionExpiresAt?` (2-hour waitlist payment window),
 `reminder24At`/`reminder2At` (SMS dedupe), `createdAt` (waitlist promotion
 order).
@@ -85,10 +96,10 @@ new ───────────► BOOKED                new ───► 
                    │  │                            │
         check-in   │  │ cancel            spot opens│
                    ▼  ▼                            ▼
-             ATTENDED CANCELLED   credits? ──► BOOKED
-                   │                  no credits ─► WAITLIST + promotionExpiresAt
-   session ends,   │                                  │ paid in 2h → BOOKED
-   never checked in▼                                  │ expired    → CANCELLED
+             ATTENDED CANCELLED         WAITLIST + promotionExpiresAt
+                   │                        │ paid in 2h → BOOKED
+   session ends,   │                        │ expired    → CANCELLED
+   never checked in▼
                NO_SHOW (via cron)
 ```
 

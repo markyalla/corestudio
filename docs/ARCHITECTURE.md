@@ -96,7 +96,7 @@ check-in) and My earnings only. OWNER additionally gets staff invites.
 ## Payments flow
 
 ```
-Member books, no credits/wallet
+Member books, no matching package/wallet
   → POST /api/app/bookings
       → startBookingCheckout(): PENDING Payment(ref) + Paystack initialize
       → client redirects to authorization_url
@@ -104,7 +104,7 @@ Paystack → POST /api/webhooks/paystack  (HMAC-SHA512 verified)
   → handleChargeSuccess(ref):
       Payment CONFIRMED (idempotency gate)
       BOOKING       → capacity re-check → create BOOKED (or wallet-refund + WAITLIST)
-      RENEWAL       → reset credits, advance cycleRenewsAt, ACTIVE
+      PACKAGE       → create a fresh MemberPackage (sessionsGranted, validDays)
       WAITLIST_CLAIM→ WAITLIST → BOOKED within the 2h window (or wallet refund)
   → confirmation SMS
 Callback page → GET /api/app/pay/verify?reference=
@@ -122,10 +122,8 @@ Callback page → GET /api/app/pay/verify?reference=
 2. `completeSessions` — sessions past end time → `COMPLETED`; un-checked
    `BOOKED` → `NO_SHOW`; stale `WAITLIST` → `CANCELLED`.
 3. `expireWaitlistOffers` — lapsed 2-hour windows → `CANCELLED`, promote next.
-4. `processPlanCycles` — confirmed renewal → credits reset + cycle advance;
-   unpaid 3 days past due → `FROZEN` (frozen members cannot book).
-5. `sendReminders` — 24h/2h booking SMS, 3-day renewal SMS; deduped via
-   `reminder24At`/`reminder2At`/`renewalReminderAt` timestamps.
+4. `sendReminders` — 24h/2h booking SMS, deduped via `reminder24At`/
+   `reminder2At` timestamps.
 
 In production the compose stack's `cron` container fires this every
 5 minutes. Any external scheduler (system cron, GitHub Actions, Uptime
