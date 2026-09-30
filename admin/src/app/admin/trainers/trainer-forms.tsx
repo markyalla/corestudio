@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { parseGHS } from "@backend/lib/money";
 import { fileToResizedDataUrl } from "@/lib/image";
@@ -21,12 +22,29 @@ async function api(path: string, method: string, body: unknown): Promise<string 
   return null;
 }
 
-export function NewTrainerButton() {
+// Visually distinct, evenly-spaced hues — used so a newly created trainer
+// doesn't default to the same blue as everyone else (calendar colour-coding
+// only works if trainers actually end up with different colours; leaving it
+// on staff to remember to pick one every time is how they all end up
+// identical in practice).
+const TRAINER_COLOR_PALETTE = [
+  "#0ea5e9", "#f97316", "#22c55e", "#a855f7", "#ef4444",
+  "#eab308", "#14b8a6", "#ec4899", "#6366f1", "#84cc16",
+];
+
+function pickUnusedColor(usedColors: string[]): string {
+  const used = new Set(usedColors.map((c) => c.toLowerCase()));
+  return TRAINER_COLOR_PALETTE.find((c) => !used.has(c.toLowerCase()))
+    ?? TRAINER_COLOR_PALETTE[usedColors.length % TRAINER_COLOR_PALETTE.length];
+}
+
+export function NewTrainerButton({ usedColors }: { usedColors: string[] }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState({
-    name: "", email: "", phone: "", specialty: "", commission: "40", ptCommission: "60", ptRate: "", color: "#0ea5e9", password: "",
+    name: "", email: "", phone: "", specialty: "", commission: "40", ptCommission: "60", ptRate: "",
+    color: pickUnusedColor(usedColors), password: "",
   });
 
   async function submit() {
@@ -140,7 +158,9 @@ export function TrainerRow({ trainer, locations }: {
             <span className="h-10 w-1.5 rounded-full" style={{ backgroundColor: trainer.calendarColor }} />
           )}
           <div>
-            <p className="font-medium text-stone-900">{trainer.name}</p>
+            <Link href={`/admin/trainers/${trainer.id}`} className="font-medium text-stone-900 underline-offset-2 hover:underline">
+              {trainer.name}
+            </Link>
             <p className="text-xs text-stone-500">{trainer.email} · {trainer.phone}</p>
             <p className="text-xs text-stone-400">{trainer.specialty}</p>
           </div>

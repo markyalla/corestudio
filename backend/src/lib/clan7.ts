@@ -80,12 +80,19 @@ export async function applyClan7(prisma: PrismaClient): Promise<AppliedClan7> {
     if (existing) {
       await prisma.package.update({
         where: { id: existing.id },
-        data: { classTypeId, sessionsGranted: p.sessionsGranted, priceGHS: p.priceGHS, validDays: p.validDays, active: true },
+        data: {
+          classTypes: { set: [{ id: classTypeId }] },
+          sessionsGranted: p.sessionsGranted, priceGHS: p.priceGHS, validDays: p.validDays, active: true,
+        },
       });
       packagesUpdated++;
     } else {
       await prisma.package.create({
-        data: { name: p.name, classTypeId, sessionsGranted: p.sessionsGranted, priceGHS: p.priceGHS, validDays: p.validDays },
+        data: {
+          name: p.name,
+          classTypes: { connect: [{ id: classTypeId }] },
+          sessionsGranted: p.sessionsGranted, priceGHS: p.priceGHS, validDays: p.validDays,
+        },
       });
       packagesCreated++;
     }

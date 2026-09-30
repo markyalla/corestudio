@@ -56,7 +56,7 @@ export default async function TrainersPage() {
     <main className="p-4 sm:p-6 lg:p-8">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold text-stone-900">Trainers</h1>
-        <NewTrainerButton />
+        <NewTrainerButton usedColors={rows.map((t) => t.calendarColor)} />
       </div>
       <div className="mt-4 space-y-3">
         {rows.map((t) => (

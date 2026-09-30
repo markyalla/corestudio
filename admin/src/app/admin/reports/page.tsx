@@ -1,20 +1,77 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { prisma } from "@backend/lib/prisma";
+import { LocationReport, type LocationReportGroup } from "./location-report";
 
 export const metadata = { title: "Reports — P4Studio Admin" };
 export const dynamic = "force-dynamic";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
+/** Groups the last 30 days' bookings by location, then by class + trainer —
+ *  who booked, who attended, and what it brought in. */
+function buildLocationReport(
+  bookings: {
+    status: string;
+    amountGHS: number;
+    member: { user: { name: string } };
+    session: {
+      classType: { name: string } | null;
+      trainer: { id: string; user: { name: string } };
+      location: { id: string; name: string } | null;
+    };
+  }[],
+): LocationReportGroup[] {
+  const locations = new Map<string, { name: string; classes: Map<string, LocationReportGroup["classes"][number]> }>();
+
+  for (const b of bookings) {
+    const locId = b.session.location?.id ?? "none";
+    const locName = b.session.location?.name ?? "No location set";
+    if (!locations.has(locId)) locations.set(locId, { name: locName, classes: new Map() });
+    const loc = locations.get(locId)!;
+
+    const className = b.session.classType?.name ?? "Private class";
+    const key = `${className}::${b.session.trainer.id}`;
+    if (!loc.classes.has(key)) {
+      loc.classes.set(key, {
+        key,
+        className,
+        trainerName: b.session.trainer.user.name,
+        bookedCount: 0,
+        attendedCount: 0,
+        noShowCount: 0,
+        revenueGHS: 0,
+        members: [],
+      });
+    }
+    const group = loc.classes.get(key)!;
+    group.bookedCount += 1;
+    if (b.status === "ATTENDED") group.attendedCount += 1;
+    if (b.status === "NO_SHOW") group.noShowCount += 1;
+    group.revenueGHS += b.amountGHS;
+    group.members.push({ name: b.member.user.name, status: b.status });
+  }
+
+  return Array.from(locations.entries())
+    .map(([locationId, loc]) => ({
+      locationId,
+      locationName: loc.name,
+      classes: Array.from(loc.classes.values()).sort(
+        (a, b) => a.className.localeCompare(b.className) || a.trainerName.localeCompare(b.trainerName),
+      ),
+    }))
+    .sort((a, b) => a.locationName.localeCompare(b.locationName));
+}
+
 export default async function ReportsPage() {
   const session = await auth();
   if (session?.user?.role === "TRAINER") redirect("/admin/timetable");
+  if (session?.user?.role === "ACCOUNTANT") redirect("/admin/payroll");
 
   const now = new Date();
   const d30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-  const [byClassType, heat, attended, noShow] = await Promise.all([
+  const [byClassType, heat, attended, noShow, locationBookings] = await Promise.all([
     prisma.$queryRaw<{ name: string; attended: bigint; noshow: bigint; booked: bigint }[]>`
       SELECT ct.name,
              COUNT(*) FILTER (WHERE b.status = 'ATTENDED') AS attended,
@@ -37,7 +94,24 @@ export default async function ReportsPage() {
     `,
     prisma.booking.count({ where: { status: "ATTENDED", session: { startsAt: { gte: d30 } } } }),
     prisma.booking.count({ where: { status: "NO_SHOW", session: { startsAt: { gte: d30 } } } }),
+    prisma.booking.findMany({
+      where: { status: { in: ["BOOKED", "ATTENDED", "NO_SHOW"] }, session: { startsAt: { gte: d30 } } },
+      select: {
+        status: true,
+        amountGHS: true,
+        member: { select: { user: { select: { name: true } } } },
+        session: {
+          select: {
+            classType: { select: { name: true } },
+            trainer: { select: { id: true, user: { select: { name: true } } } },
+            location: { select: { id: true, name: true } },
+          },
+        },
+      },
+    }),
   ]);
+
+  const locationReport = buildLocationReport(locationBookings);
 
   const heatMap = new Map<string, number>();
   let heatMax = 1;
@@ -129,6 +203,13 @@ export default async function ReportsPage() {
           </div>
         </div>
       </div>
+
+      <h2 className="mt-8 text-lg font-semibold text-stone-900">By location</h2>
+      <p className="mt-1 text-sm text-stone-500">
+        Every class taught at each location in the last 30 days, with its trainer, who booked it,
+        who attended, and the revenue it brought in.
+      </p>
+      <LocationReport locations={locationReport} />
 
       <div className="mt-6 rounded-2xl bg-white p-6 shadow-sm">
         <h2 className="text-sm font-medium text-stone-700">CSV export</h2>

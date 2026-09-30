@@ -14,7 +14,7 @@ const NAV = [
   { href: "/admin/my-earnings", label: "My earnings", roles: ["TRAINER"] },
   { href: "/admin/requests", label: "Requests", roles: ["TRAINER"] },
   { href: "/admin/trainer-requests", label: "Trainer requests", roles: ["OWNER", "ADMIN"] },
-  { href: "/admin/reports", label: "Reports", roles: ["OWNER", "ADMIN", "ACCOUNTANT"] },
+  { href: "/admin/reports", label: "Reports", roles: ["OWNER", "ADMIN"] },
   { href: "/admin/audit", label: "Audit Log", roles: ["OWNER", "ADMIN"] },
   { href: "/admin/settings", label: "Settings", roles: ["OWNER", "ADMIN"] },
 ];

@@ -7,7 +7,7 @@ import { deleteOrConflict } from "@/lib/db-errors";
 
 const createSchema = z.object({
   name: z.string().min(1).max(200),
-  classTypeId: z.string().min(1),
+  classTypeIds: z.array(z.string().min(1)).min(1),
   sessionsGranted: z.number().int().min(1),
   priceGHS: z.number().int().nonnegative(), // pesewas
   validDays: z.number().int().min(1),
@@ -20,11 +20,12 @@ const updateSchema = createSchema.partial().extend({
 });
 
 /** One-time session bundles (e.g. "Thai Massage 90min — Buy 7 Get 1"), each
- *  scoped to one ClassType — see Package in schema.prisma. */
+ *  covering one or more ClassTypes from a shared session pool — see Package
+ *  in schema.prisma. */
 export const GET = apiHandler(async () => {
   await requireRole(["OWNER", "ADMIN"]);
   const packages = await prisma.package.findMany({
-    include: { classType: { select: { name: true, priceGHS: true } }, perks: true },
+    include: { classTypes: { select: { id: true, name: true, priceGHS: true } }, perks: true },
     orderBy: { name: "asc" },
   });
   return NextResponse.json({ packages });
@@ -32,14 +33,18 @@ export const GET = apiHandler(async () => {
 
 export const POST = apiHandler(async (req: Request) => {
   const session = await requireRole(["OWNER", "ADMIN"]);
-  const { perkIds, ...body } = createSchema.parse(await req.json());
+  const { perkIds, classTypeIds, ...body } = createSchema.parse(await req.json());
   const pkg = await prisma.$transaction(async (tx) => {
     const pkg = await tx.package.create({
-      data: { ...body, perks: { connect: perkIds.map((id) => ({ id })) } },
+      data: {
+        ...body,
+        classTypes: { connect: classTypeIds.map((id) => ({ id })) },
+        perks: { connect: perkIds.map((id) => ({ id })) },
+      },
     });
     await audit(tx, {
       userId: session.user.id, action: "package.create", entity: "Package",
-      entityId: pkg.id, payload: JSON.parse(JSON.stringify({ ...body, perkIds })),
+      entityId: pkg.id, payload: JSON.parse(JSON.stringify({ ...body, classTypeIds, perkIds })),
     });
     return pkg;
   });
@@ -48,18 +53,19 @@ export const POST = apiHandler(async (req: Request) => {
 
 export const PATCH = apiHandler(async (req: Request) => {
   const session = await requireRole(["OWNER", "ADMIN"]);
-  const { id, perkIds, ...data } = updateSchema.parse(await req.json());
+  const { id, perkIds, classTypeIds, ...data } = updateSchema.parse(await req.json());
   const pkg = await prisma.$transaction(async (tx) => {
     const pkg = await tx.package.update({
       where: { id },
       data: {
         ...data,
+        ...(classTypeIds ? { classTypes: { set: classTypeIds.map((cid) => ({ id: cid })) } } : {}),
         ...(perkIds ? { perks: { set: perkIds.map((pid) => ({ id: pid })) } } : {}),
       },
     });
     await audit(tx, {
       userId: session.user.id, action: "package.update", entity: "Package",
-      entityId: id, payload: JSON.parse(JSON.stringify({ ...data, perkIds })),
+      entityId: id, payload: JSON.parse(JSON.stringify({ ...data, classTypeIds, perkIds })),
     });
     return pkg;
   });

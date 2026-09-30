@@ -123,7 +123,7 @@ export default function PackagesScreen() {
                 <View>
                   <Text style={styles.myCardTitle}>{mp.name}</Text>
                   <Text style={styles.myCardSub}>
-                    {mp.classTypeName} · expires {new Date(mp.expiresAt).toLocaleDateString()}
+                    {mp.classes.map((c) => c.name).join(", ")} · expires {new Date(mp.expiresAt).toLocaleDateString()}
                   </Text>
                 </View>
                 <Text style={styles.myCardSessions}>{mp.sessionsLeft} left</Text>
@@ -146,7 +146,7 @@ export default function PackagesScreen() {
                 <Text style={styles.planPrice}>{formatGHS(pkg.priceGHS)}</Text>
               </View>
               <Text style={styles.planMeta}>
-                {pkg.classTypeName} · {pkg.sessionsGranted} sessions · valid {pkg.validDays} days
+                {pkg.classes.map((c) => c.name).join(", ")} · {pkg.sessionsGranted} sessions · valid {pkg.validDays} days
               </Text>
             </Pressable>
             <Pressable
@@ -184,8 +184,12 @@ export default function PackagesScreen() {
           onClose={() => setDetail(null)}
           title={detail.pkg.name}
           price={formatGHS(detail.pkg.priceGHS)}
-          metaLines={[`${detail.pkg.classTypeName}`, `${detail.pkg.sessionsGranted} sessions · valid ${detail.pkg.validDays} days`]}
-          description={detail.pkg.classTypeDescription}
+          metaLines={[
+            detail.pkg.classes.map((c) => c.name).join(", "),
+            `${detail.pkg.sessionsGranted} sessions · valid ${detail.pkg.validDays} days`,
+          ]}
+          description={detail.pkg.classes.length === 1 ? detail.pkg.classes[0].description : undefined}
+          classNames={detail.pkg.classes.map((c) => c.name)}
           perks={detail.pkg.perks}
         />
       )}
@@ -195,10 +199,11 @@ export default function PackagesScreen() {
           onClose={() => setDetail(null)}
           title={detail.pkg.name}
           metaLines={[
-            `${detail.pkg.classTypeName}`,
+            detail.pkg.classes.map((c) => c.name).join(", "),
             `${detail.pkg.sessionsLeft} sessions left · expires ${new Date(detail.pkg.expiresAt).toLocaleDateString()}`,
           ]}
-          description={detail.pkg.classTypeDescription}
+          description={detail.pkg.classes.length === 1 ? detail.pkg.classes[0].description : undefined}
+          classNames={detail.pkg.classes.map((c) => c.name)}
           perks={detail.pkg.perks}
         />
       )}
