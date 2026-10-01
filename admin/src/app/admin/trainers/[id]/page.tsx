@@ -1,4 +1,5 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
+import { auth } from "@/auth";
 import { prisma } from "@backend/lib/prisma";
 import { formatGHS } from "@backend/lib/money";
 import { TrainerBookingsPanel, type TrainerBookingRow } from "./trainer-bookings-panel";
@@ -13,6 +14,10 @@ export default async function TrainerDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  const session = await auth();
+  if (session?.user?.role === "TRAINER") redirect("/admin/timetable");
+  if (session?.user?.role === "ACCOUNTANT") redirect("/admin/payroll");
+
   const { id } = await params;
   const [trainer, bookingAgg, attendedCount, noShowCount, bookings, sessionsCount] = await Promise.all([
     prisma.trainer.findUnique({ where: { id }, include: { user: true } }),
